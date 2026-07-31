@@ -1,11 +1,525 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <title>My Home Page</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#ffb6c1">
+<title>给你的小信 💌</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #ffd1dc 0%, #ffe4e9 50%, #fff0f5 100%);
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+
+  /* === 通用层 === */
+  .stage {
+    position: fixed; inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    padding: 20px;
+  }
+  .stage.active { display: flex; }
+
+  /* === Stage 1: 信封 === */
+  #stage-envelope { z-index: 5; }
+
+  .falling-envelope {
+    position: absolute;
+    top: -60px;
+    font-size: 32px;
+    pointer-events: none;
+    animation: fall linear forwards;
+    will-change: transform;
+  }
+  @keyframes fall {
+    0%   { transform: translateY(0) rotate(0deg); opacity: 1; }
+    90%  { opacity: 1; }
+    100% { transform: translateY(110vh) rotate(360deg); opacity: 0.6; }
+  }
+
+  .big-envelope {
+    font-size: 140px;
+    line-height: 1;
+    filter: drop-shadow(0 8px 20px rgba(0,0,0,0.15));
+    animation: bounceIn 1s ease;
+  }
+  @keyframes bounceIn {
+    0% { transform: scale(0); }
+    60% { transform: scale(1.2); }
+    80% { transform: scale(0.95); }
+    100% { transform: scale(1); }
+  }
+
+  .title-hint {
+    margin-top: 12px;
+    font-size: 16px;
+    color: #c45a7a;
+    letter-spacing: 2px;
+  }
+
+  .btn-row {
+    margin-top: 36px;
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    width: 100%;
+    height: 60px;
+  }
+  .btn {
+    border: none;
+    border-radius: 30px;
+    padding: 14px 32px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+    transition: transform 0.18s ease, left 0.25s ease, top 0.25s ease;
+    white-space: nowrap;
+  }
+  .btn-open   { background: linear-gradient(135deg, #ff7eb3, #ff4081); }
+  .btn-skip   { background: linear-gradient(135deg, #bdc3c7, #95a5a6); }
+  .btn-cold   { background: linear-gradient(135deg, #74b9ff, #0984e3); }
+  .btn-hot    { background: linear-gradient(135deg, #ff7675, #d63031); }
+  .btn-forgive{ background: linear-gradient(135deg, #fd79a8, #e84393); }
+  .btn-bad    { background: linear-gradient(135deg, #636e72, #2d3436); }
+
+  /* === Stage 2: 信件 === */
+  #stage-letter {
+    z-index: 10;
+    background: linear-gradient(135deg, #ffd1dc 0%, #ffe4e9 50%, #fff0f5 100%);
+  }
+  .letter-paper {
+    width: min(92vw, 480px);
+    max-height: 78vh;
+    overflow-y: auto;
+    background: #fffaf0;
+    border-radius: 16px;
+    padding: 26px 24px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+    border: 1px solid #ffe4e1;
+    -webkit-overflow-scrolling: touch;
+  }
+  .letter-paper::-webkit-scrollbar { width: 4px; }
+  .letter-paper::-webkit-scrollbar-thumb { background: #ffb6c1; border-radius: 4px; }
+
+  .letter-to {
+    font-size: 18px;
+    color: #d6336c;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 16px;
+    letter-spacing: 1px;
+  }
+  .letter-body {
+    font-size: 15.5px;
+    line-height: 1.9;
+    color: #5a3d3d;
+    text-align: justify;
+    white-space: pre-wrap;
+  }
+  .letter-sign {
+    margin-top: 18px;
+    text-align: right;
+    color: #c45a7a;
+    font-style: italic;
+  }
+
+  .violence-row {
+    margin-top: 24px;
+    display: flex;
+    gap: 18px;
+    justify-content: center;
+    width: 100%;
+    position: relative;
+    height: 60px;
+  }
+
+  /* === Stage 3: 攻击 ggh === */
+  #stage-attack { z-index: 15; }
+  .attack-title {
+    font-size: 22px;
+    color: #d6336c;
+    margin-bottom: 8px;
+    font-weight: 700;
+  }
+  .attack-sub {
+    font-size: 13px;
+    color: #b07a8a;
+    margin-bottom: 24px;
+  }
+  .ggh-target {
+    font-size: 72px;
+    font-weight: 900;
+    color: #ff4081;
+    text-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    margin-bottom: 28px;
+    transition: transform 0.12s ease, filter 0.12s ease;
+    user-select: none;
+  }
+  .ggh-target.hit {
+    transform: scale(0.85) rotate(-3deg);
+    filter: hue-rotate(40deg) brightness(1.1);
+  }
+  .weapon-row {
+    display: flex;
+    gap: 22px;
+    margin-bottom: 28px;
+  }
+  .weapon {
+    font-size: 48px;
+    background: #fff;
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.1);
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+  .weapon:active { transform: scale(0.85); }
+
+  .action-row {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    width: 100%;
+    height: 60px;
+  }
+
+  /* === 飘屏文字/表情 === */
+  .floater {
+    position: fixed;
+    pointer-events: none;
+    font-weight: 800;
+    will-change: transform, opacity;
+    z-index: 999;
+  }
+  .floater.text {
+    font-size: 28px;
+    color: #ff3366;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+  .floater.emoji {
+    font-size: 32px;
+  }
+
+  @keyframes popNo {
+    0%   { transform: translate(0,0) scale(0.2) rotate(0deg); opacity: 0; }
+    30%  { opacity: 1; }
+    100% { transform: translate(var(--tx), var(--ty)) scale(1.4) rotate(var(--rot)); opacity: 0; }
+  }
+  @keyframes flyUp {
+    0%   { transform: translate(0,0) scale(0.4); opacity: 0; }
+    15%  { opacity: 1; transform: translate(0,-30px) scale(1.1); }
+    100% { transform: translate(var(--tx), var(--ty)) scale(0.9); opacity: 0; }
+  }
+  @keyframes burstHeart {
+    0%   { transform: translate(-50%, 0) scale(0.3); opacity: 0; }
+    15%  { opacity: 1; }
+    100% { transform: translate(calc(-50% + var(--tx)), var(--ty)) scale(1.2); opacity: 0; }
+  }
+
+  /* === 通用隐藏 === */
+  .hide { display: none !important; }
+</style>
 </head>
 <body>
-    <h1>Hello GitHub Pages!</h1>
-    <p>这是我的第一个主页。</p>
+
+<!-- ===== Stage 1: 信封飘落 ===== -->
+<div class="stage active" id="stage-envelope">
+  <div class="big-envelope">✉️</div>
+  <div class="title-hint">有一封给你的信</div>
+  <div class="btn-row" id="envelopeBtnRow">
+    <button class="btn btn-open" id="btnOpen">打开 💌</button>
+    <button class="btn btn-skip" id="btnSkip">不打开 🙈</button>
+  </div>
+</div>
+
+<!-- ===== Stage 2: 信件内容 ===== -->
+<div class="stage" id="stage-letter">
+  <div class="letter-paper">
+    <div class="letter-to">to 善良美丽大方害羞腼腆文静的宝宝 💗</div>
+    <div class="letter-body" id="letterBody"></div>
+    <div class="letter-sign">—— 永远爱你的 ggh</div>
+  </div>
+  <div class="violence-row" id="violenceRow">
+    <button class="btn btn-cold" id="btnCold">冷暴力 🥶</button>
+    <button class="btn btn-hot" id="btnHot">热暴力 🔥</button>
+  </div>
+</div>
+
+<!-- ===== Stage 3: 攻击 ggh ===== -->
+<div class="stage" id="stage-attack">
+  <div class="attack-title">消消气，来打我吧 🥺</div>
+  <div class="attack-sub">（疯狂点击下面的表情攻击 ggh）</div>
+  <div class="ggh-target" id="gghTarget">ggh</div>
+  <div class="weapon-row" id="weaponRow">
+    <div class="weapon" data-w="💣">💣</div>
+    <div class="weapon" data-w="💩">💩</div>
+    <div class="weapon" data-w="🐷">🐷</div>
+  </div>
+  <div class="action-row" id="actionRow">
+    <button class="btn btn-forgive" id="btnForgive">不生气了 🥰</button>
+    <button class="btn btn-bad" id="btnBad">sb ggh 😤</button>
+  </div>
+</div>
+
+<script>
+/* =====================================================
+ * 工具函数
+ * ===================================================== */
+const $ = (id) => document.getElementById(id);
+const rand = (min, max) => Math.random() * (max - min) + min;
+
+/* =====================================================
+ * Stage 1: 信封飘落
+ * ===================================================== */
+(function startFalling() {
+  const stage = $('stage-envelope');
+  const EMOJIS = ['✉️', '💌', '🌸', '💗', '💕'];
+  const COUNT = 28;
+
+  for (let i = 0; i < COUNT; i++) {
+    const el = document.createElement('div');
+    el.className = 'falling-envelope';
+    el.textContent = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+    el.style.left = rand(0, 100) + 'vw';
+    el.style.fontSize = rand(22, 44) + 'px';
+    el.style.animationDuration = rand(4, 8) + 's';
+    el.style.animationDelay = rand(0, 4) + 's';
+    el.style.opacity = rand(0.6, 1);
+    stage.appendChild(el);
+  }
+})();
+
+/* 不打开按钮：每次点击移动 + 缩小 */
+const btnSkip = $('btnSkip');
+let skipScale = 1;
+let skipX = 0, skipY = 0;
+btnSkip.addEventListener('click', (e) => {
+  e.preventDefault();
+  skipScale = Math.max(0.25, skipScale - 0.12);
+  const stage = $('stage-envelope');
+  const rect = stage.getBoundingClientRect();
+  const maxX = rect.width / 2 - 40;
+  const maxY = 120;
+  skipX = rand(-maxX, maxX);
+  skipY = rand(-maxY, maxY);
+  btnSkip.style.transform = `translate(${skipX}px, ${skipY}px) scale(${skipScale})`;
+});
+// 触摸时也触发（避免移动端 click 延迟）
+btnSkip.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  btnSkip.click();
+}, { passive: false });
+
+/* 打开按钮 */
+$('btnOpen').addEventListener('click', goToLetter);
+function goToLetter() {
+  $('stage-envelope').classList.remove('active');
+  $('stage-letter').classList.add('active');
+  // 清掉飘落信封，减少干扰
+  document.querySelectorAll('.falling-envelope').forEach(el => el.remove());
+}
+
+/* =====================================================
+ * Stage 2: 信件正文（占位文本，你最后再修改）
+ * ===================================================== */
+const letterText = `今天惹你生气是我不对，先跟你道歉 🙏
+
+我知道你生气是因为在乎我，
+你每一句"哼"背后，都是希望我能做得更好。
+
+我这个人有时真的笨笨的、嘴也笨，
+可心里满满的全是你。
+
+你笑起来的样子是我一天里最期待的事，
+所以别生气了好不好？
+
+我会努力变成让你少操心、多笑一点的那个人。
+接下来的日子，让我慢慢证明给你看 💗`;
+$('letterBody').textContent = letterText;
+
+/* =====================================================
+ * 冷暴力 / 热暴力
+ * ===================================================== */
+const btnCold = $('btnCold');
+const btnHot  = $('btnHot');
+
+btnCold.addEventListener('click', () => burstFromEdges('NO!', '#0984e3'));
+btnHot.addEventListener('click',  () => burstFromEdges('ggh是sb', '#ff3366'));
+
+/* 冷暴力按钮：点击后移动 + 缩小 */
+let coldScale = 1;
+btnCold.addEventListener('click', moveAndShrink.bind(null, btnCold, () => coldScale, v => coldScale = v));
+
+/* 从屏幕四面八方爆出文字 */
+function burstFromEdges(text, color) {
+  const N = 22;
+  for (let i = 0; i < N; i++) {
+    const el = document.createElement('div');
+    el.className = 'floater text';
+    el.textContent = text;
+    el.style.color = color;
+    // 从四条边之一出发
+    const side = Math.floor(Math.random() * 4); // 0上 1右 2下 3左
+    let startX, startY, tx, ty;
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    switch (side) {
+      case 0: startX = rand(0, window.innerWidth);  startY = -20;  tx = rand(-cx*0.6, cx*0.6); ty = rand(cy*0.4, cy*0.9); break;
+      case 1: startX = window.innerWidth + 20;      startY = rand(0, window.innerHeight); tx = rand(-cx*0.9, -cx*0.3); ty = rand(-cy*0.5, cy*0.5); break;
+      case 2: startX = rand(0, window.innerWidth);  startY = window.innerHeight + 20; tx = rand(-cx*0.6, cx*0.6); ty = rand(-cy*0.9, -cy*0.4); break;
+      case 3: startX = -20;                         startY = rand(0, window.innerHeight); tx = rand(cx*0.3, cx*0.9);  ty = rand(-cy*0.5, cy*0.5); break;
+    }
+    el.style.left = startX + 'px';
+    el.style.top  = startY + 'px';
+    el.style.setProperty('--tx', tx + 'px');
+    el.style.setProperty('--ty', ty + 'px');
+    el.style.setProperty('--rot', rand(-180, 180) + 'deg');
+    el.style.fontSize = rand(20, 40) + 'px';
+    el.style.animation = `popNo ${rand(1.2, 2)}s ease-out forwards`;
+    el.style.animationDelay = rand(0, 0.3) + 's';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2500);
+  }
+}
+
+function moveAndShrink(btn, getScale, setScale) {
+  const rect = $('stage-letter').getBoundingClientRect();
+  const maxX = rect.width / 2 - 50;
+  const maxY = 100;
+  const s = Math.max(0.3, getScale() - 0.15);
+  setScale(s);
+  btn.style.transform = `translate(${rand(-maxX, maxX)}px, ${rand(-maxY, maxY)}px) scale(${s})`;
+}
+
+/* 热暴力点击若干次后进入 Stage 3 */
+let hotCount = 0;
+btnHot.addEventListener('click', () => {
+  hotCount++;
+  if (hotCount >= 2) goToAttack();
+});
+// 也可双击直接进入（兜底）
+btnHot.addEventListener('dblclick', goToAttack);
+
+function goToAttack() {
+  $('stage-letter').classList.remove('active');
+  $('stage-attack').classList.add('active');
+}
+
+/* =====================================================
+ * Stage 3: 攻击 ggh
+ * ===================================================== */
+const ggh = $('gghTarget');
+const weapons = document.querySelectorAll('.weapon');
+
+weapons.forEach(w => {
+  const trigger = (e) => {
+    if (e) e.preventDefault();
+    fireWeapon(w.dataset.w, w);
+    ggh.classList.add('hit');
+    setTimeout(() => ggh.classList.remove('hit'), 120);
+  };
+  w.addEventListener('click', trigger);
+  w.addEventListener('touchstart', trigger, { passive: false });
+});
+
+function fireWeapon(emoji, fromEl) {
+  // 从表情位置抛出小 emoji 飞向 ggh
+  const rect = fromEl.getBoundingClientRect();
+  const targetRect = ggh.getBoundingClientRect();
+  const startX = rect.left + rect.width / 2;
+  const startY = rect.top + rect.height / 2;
+  const endX = targetRect.left + targetRect.width / 2;
+  const endY = targetRect.top + targetRect.height / 2;
+
+  for (let i = 0; i < 4; i++) {
+    const p = document.createElement('div');
+    p.className = 'floater emoji';
+    p.textContent = emoji;
+    p.style.left = startX + 'px';
+    p.style.top  = startY + 'px';
+    p.style.fontSize = '32px';
+    const tx = (endX - startX) + rand(-30, 30);
+    const ty = (endY - startY) + rand(-30, 30);
+    p.style.setProperty('--tx', tx + 'px');
+    p.style.setProperty('--ty', ty + 'px');
+    p.style.animation = `flyUp ${rand(0.5, 0.8)}s ease-out forwards`;
+    p.style.animationDelay = (i * 0.05) + 's';
+    document.body.appendChild(p);
+    setTimeout(() => p.remove(), 1200);
+  }
+
+  // 同时在 ggh 上爆开一个 emoji 反馈
+  const hit = document.createElement('div');
+  hit.className = 'floater emoji';
+  hit.textContent = emoji;
+  hit.style.left = '50%';
+  hit.style.top = '40%';
+  hit.style.fontSize = '60px';
+  hit.style.setProperty('--tx', rand(-80, 80) + 'px');
+  hit.style.setProperty('--ty', rand(-80, -40) + 'px');
+  hit.style.animation = `burstHeart 0.7s ease-out forwards`;
+  document.body.appendChild(hit);
+  setTimeout(() => hit.remove(), 900);
+}
+
+/* =====================================================
+ * 不生气了 / sb ggh
+ * ===================================================== */
+const btnForgive = $('btnForgive');
+const btnBad     = $('btnBad');
+
+btnForgive.addEventListener('click', () => shower(['❤️','💖','💕','💘','💝','😘','💋','🥰'], '#ff3366'));
+btnBad.addEventListener('click', () => {
+  shower(['💔','🩹'], '#7f8c8d');
+  moveAndShrink(btnBad, () => badScale, v => badScale = v);
+});
+
+let badScale = 1;
+// 也让 sb ggh 一开始就能被点中（缩小逻辑已包含）
+
+/* 满屏飘屏 emoji */
+function shower(emojis, color) {
+  const N = 35;
+  for (let i = 0; i < N; i++) {
+    const el = document.createElement('div');
+    el.className = 'floater emoji';
+    el.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+    el.style.color = color;
+    el.style.left = rand(0, window.innerWidth) + 'px';
+    el.style.top  = (window.innerHeight + 40) + 'px';
+    el.style.fontSize = rand(24, 44) + 'px';
+    const tx = rand(-60, 60);
+    const ty = rand(-window.innerHeight - 200, -window.innerHeight * 0.6);
+    el.style.setProperty('--tx', tx + 'px');
+    el.style.setProperty('--ty', ty + 'px');
+    el.style.animation = `flyUp ${rand(2.5, 4.5)}s ease-out forwards`;
+    el.style.animationDelay = rand(0, 1) + 's';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 6000);
+  }
+}
+
+/* 防止移动端双击放大/选中等 */
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault());
+</script>
 </body>
 </html>
