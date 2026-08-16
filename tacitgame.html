@@ -440,10 +440,26 @@
   .sync-bar {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
+    gap: 10px;
+    max-width: 720px;
+    margin: 0 auto 14px;
+    padding: 0 24px;
+  }
+  .sync-bar .sync-status-pill {
+    display: inline-flex;
+    align-items: center;
     gap: 8px;
-    margin-bottom: 14px;
-    padding: 4px 4px;
+    padding: 6px 12px;
+    background: rgba(255,255,255,0.7);
+    border: 1px solid rgba(176, 80, 106, 0.12);
+    border-radius: 999px;
+    box-shadow: 0 2px 8px rgba(176, 80, 106, 0.06);
+  }
+  .sync-bar .sync-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .sync-bar .status-dot {
     width: 8px;
@@ -457,9 +473,33 @@
   .sync-bar .status-text {
     font-size: 12px;
     color: #8a6a72;
+    line-height: 1;
   }
   .sync-bar .status-text.online { color: #4caf80; }
   .sync-bar .status-text.err    { color: #e07a8a; }
+  .sync-bar .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #b0506a;
+    background: rgba(255,255,255,0.7);
+    border: 1px solid rgba(176, 80, 106, 0.12);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.15s;
+    line-height: 1;
+  }
+  .sync-bar .icon-btn:hover {
+    background: #fff;
+    border-color: rgba(176, 80, 106, 0.3);
+  }
+  .sync-bar .icon-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 
   /* 导航按钮 */
   .nav-row {
@@ -656,10 +696,14 @@
 
 <div id="mainArea" style="display:none;">
   <div class="sync-bar" id="syncBar">
-    <span class="status-dot" id="syncDot"></span>
-    <span class="status-text" id="syncStatus">未连接</span>
-    <button id="syncRefreshBtn" style="margin-left:auto;padding:2px 10px;font-size:12px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">↻ 刷新同步</button>
-    <button id="diagnoseBtn" style="margin-left:6px;padding:2px 10px;font-size:12px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">🔍 诊断</button>
+    <div class="sync-status-pill">
+      <span class="status-dot" id="syncDot"></span>
+      <span class="status-text" id="syncStatus">未连接</span>
+    </div>
+    <div class="sync-actions">
+      <button id="syncRefreshBtn" class="icon-btn">↻ 刷新</button>
+      <button id="diagnoseBtn" class="icon-btn">🔍 诊断</button>
+    </div>
   </div>
 
   <div class="tabs">
@@ -876,7 +920,7 @@ function bindSyncIndicator() {
       btn.textContent = '同步中…';
       syncNow().finally(() => {
         btn.disabled = false;
-        btn.textContent = '↻ 刷新同步';
+        btn.textContent = '↻ 刷新';
       });
     });
   }
@@ -1244,7 +1288,7 @@ function bindQCardEvents(panel, q, storeKey, stored, isChallenge, role) {
       updateTabProgress();
 
   if (isChallenge) {
-    // 即时反馈
+    // 即时反馈：保留在卡片上，直到用户翻页才切走
     optsEl.forEach(o => { o.classList.add('locked'); o.classList.remove('selected'); });
     el.classList.add('selected');
     const partnerAns = storage.get('tacit_partner', null);
@@ -1269,8 +1313,28 @@ function bindQCardEvents(panel, q, storeKey, stored, isChallenge, role) {
       fb.className = 'feedback show';
       fb.textContent = '已保存 ✓（等对方答完即可判分）';
     }
-    // challenge 答题也算一次"必要操作"，同步一次：把猜测上传、顺便拉取对方最新答案
-    syncNow();
+    // 把"我的猜测"传给云端（其实本地只存真实答案；为保险，答一道就 syncNow 一次拉取对方最新答案）
+    // 注意：这里只拉数据，不重渲染挑战面板，避免覆盖当前题目上的结果展示
+    fetchPairAnswers().then(rows => {
+      const partnerKey = partnerRole(role);
+      const partnerRow = rows.find(r => r.role === partnerKey);
+      const partnerAnswers = partnerRow && partnerRow.answers
+        ? (typeof partnerRow.answers === 'string' ? safeParse(partnerRow.answers) : partnerRow.answers)
+        : null;
+      if (partnerAnswers && Object.keys(partnerAnswers).length > 0) {
+        const before = storage.get('tacit_partner', null);
+        storage.set('tacit_partner', partnerAnswers);
+        const beforeStr = before ? JSON.stringify(before) : '';
+        if (beforeStr !== JSON.stringify(partnerAnswers)) {
+          // 对方答案有变化才提示（不重渲染挑战面板，避免打断当前答题体验）
+          setSyncStatus('online', `${partnerNameOf(role)} 已就绪 ✓`);
+          // 仅在结果 Tab 时刷新结果面板
+          if (typeof currentTab !== 'undefined' && currentTab === 'result') {
+            renderResultPanel(role);
+          }
+        }
+      }
+    }).catch(() => {});
   } else {
     // setup 模式：每答一题就防抖上传；如果是答完最后一道（doneCount >= total）则立即同步一次，确保对方尽快看到
     const doneCount = Object.keys(storage.get(myAnswersKey(role), {})).length;
@@ -1304,15 +1368,21 @@ function bindQCardEvents(panel, q, storeKey, stored, isChallenge, role) {
       return;
     }
     if (isChallenge) {
-      // 跳到下一道未答或已答的题（总是可以翻页）
+      // 跳到下一道未答题；若都答完了就回到 0 方便回看
       const done = storage.get(storeKey, {});
       let next = -1;
       for (let i = activeQid + 1; i < QUESTIONS.length; i++) {
-        next = i; break;
+        if (!done[QUESTIONS[i].id]) { next = i; break; }
       }
-      if (next < 0 && activeQid > 0) next = 0;
-      if (next >= 0) { activeQid = next; renderChallengePanel(role); }
-      else renderChallengePanel(role);
+      if (next < 0) {
+        // 后面没有未答题：回到最早的未答题；若全部答完则回到 0
+        for (let i = 0; i < QUESTIONS.length; i++) {
+          if (!done[QUESTIONS[i].id]) { next = i; break; }
+        }
+        if (next < 0) next = 0;
+      }
+      activeQid = next;
+      renderChallengePanel(role);
     } else {
       const done2 = storage.get(myAnswersKey(role), {});
       const doneCount = Object.keys(done2).length;
@@ -1367,16 +1437,53 @@ function renderChallengePanel(role) {
 
   panel.innerHTML = topHtml;
 
-  // 找到下一道未答题；全答完则停在第一道（让用户能从头重看/重置）
-  let idx = -1;
-  for (let i = 0; i < QUESTIONS.length; i++) {
-    if (!stored[QUESTIONS[i].id]) { idx = i; break; }
+  // 定位题号：保留 activeQid 方便回看已答题；如果当前题未答，则跳到最早的未答题
+  let idx = activeQid;
+  if (!stored[QUESTIONS[idx].id]) {
+    let firstUnanswered = -1;
+    for (let i = 0; i < QUESTIONS.length; i++) {
+      if (!stored[QUESTIONS[i].id]) { firstUnanswered = i; break; }
+    }
+    if (firstUnanswered >= 0) idx = firstUnanswered;
   }
-  if (idx < 0) idx = 0;
   activeQid = idx;
   const q = QUESTIONS[idx];
   panel.dataset.ready = '1';
   panel.innerHTML += buildQCard(q, idx, stored[q.id], true, role);
+
+  // 已答题 → 直接展示判分结果（正确/错误 + 反馈条），让"上一题"回看时也能看到当时的结果
+  const userLetter = stored[q.id];
+  if (userLetter) {
+    const fb = panel.querySelector('#fb');
+    const partnerLetter = partner ? partner[q.id] : null;
+    if (partnerLetter) {
+      const isMatch = userLetter === partnerLetter;
+      fb.className = `feedback show ${isMatch ? 'correct' : 'wrong'}`;
+      if (isMatch) {
+        fb.textContent = '太棒了！猜对了！';
+      } else {
+        fb.textContent = `不对哦，ta 的答案是 ${partnerLetter}。`;
+      }
+      panel.querySelectorAll('.opt').forEach(o => {
+        o.classList.add('locked');
+        o.classList.remove('selected');
+      });
+      const userOpt = panel.querySelector(`.opt[data-letter="${userLetter}"]`);
+      if (userOpt) {
+        userOpt.classList.add('selected');
+        userOpt.classList.add(isMatch ? 'correct' : 'wrong');
+      }
+      const correctOpt = panel.querySelector(`.opt[data-letter="${partnerLetter}"]`);
+      if (correctOpt) correctOpt.classList.add('correct');
+    } else {
+      // 当时答了但对方还没答
+      fb.className = 'feedback show';
+      fb.textContent = '已保存 ✓（等对方答完即可判分）';
+      panel.querySelectorAll('.opt').forEach(o => o.classList.add('locked'));
+      const userOpt = panel.querySelector(`.opt[data-letter="${userLetter}"]`);
+      if (userOpt) { userOpt.classList.add('selected'); }
+    }
+  }
 
   // 在卡片底部追加"清空并重新答题"入口
   const resetBar = document.createElement('div');
