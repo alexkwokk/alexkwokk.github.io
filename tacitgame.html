@@ -1,0 +1,1569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#fff8f5">
+<title>默契挑战</title>
+<script src="./supabase.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #ffd6e7 0%, #ffe9d6 100%);
+    min-height: 100vh;
+    color: #333;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .logo {
+    font-size: 18px;
+    font-weight: 700;
+    color: #b0506a;
+    letter-spacing: 0.05em;
+  }
+
+  .role-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: #6c5858;
+  }
+
+  .role-pill {
+    padding: 6px 14px;
+    background: #fff;
+    border-radius: 999px;
+    box-shadow: 0 2px 8px rgba(176, 80, 106, 0.12);
+    font-weight: 600;
+    color: #b0506a;
+    font-size: 12px;
+    letter-spacing: 0.05em;
+  }
+
+  .role-btn {
+    background: transparent;
+    border: 1px solid rgba(176, 80, 106, 0.3);
+    color: #b0506a;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .role-btn:hover { background: rgba(255,255,255,0.6); }
+
+  /* 角色选择卡片 */
+  .role-card {
+    max-width: 560px;
+    margin: 60px auto;
+    background: #fff;
+    border-radius: 24px;
+    box-shadow: 0 12px 40px rgba(255, 105, 180, 0.15);
+    padding: 40px 32px;
+    text-align: center;
+  }
+
+  .role-card h2 {
+    font-size: 24px;
+    color: #b0506a;
+    margin-bottom: 12px;
+    font-weight: 600;
+  }
+
+  .role-card p {
+    color: #888;
+    font-size: 14px;
+    line-height: 1.7;
+    margin-bottom: 28px;
+  }
+
+  .role-options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .role-option {
+    padding: 22px 18px;
+    border-radius: 16px;
+    border: 2px solid #f3d8e2;
+    background: #fff8fa;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+
+  .role-option:hover {
+    border-color: #ff8aab;
+    background: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(255,138,171,0.15);
+  }
+
+  .role-option .label {
+    font-size: 18px;
+    font-weight: 700;
+    color: #b0506a;
+    margin-bottom: 6px;
+  }
+
+  .role-option .hint {
+    font-size: 12px;
+    color: #999;
+    letter-spacing: 0.05em;
+  }
+
+  /* Tab 栏 */
+  .tabs {
+    display: flex;
+    max-width: 720px;
+    margin: 0 auto 24px;
+    padding: 0 24px;
+    gap: 8px;
+  }
+
+  .tab {
+    flex: 1;
+    padding: 12px 8px;
+    background: rgba(255,255,255,0.55);
+    border-radius: 14px;
+    cursor: pointer;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: #8a6a72;
+    letter-spacing: 0.05em;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+    position: relative;
+  }
+
+  .tab.active {
+    background: #fff;
+    color: #b0506a;
+    border-color: rgba(176, 80, 106, 0.25);
+    box-shadow: 0 6px 18px rgba(176, 80, 106, 0.12);
+  }
+
+  .tab .progress {
+    display: block;
+    margin-top: 2px;
+    font-size: 10px;
+    color: #b89aa4;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+
+  .tab.active .progress { color: #d68aa0; }
+
+  /* Tab 内容容器 */
+  .content {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 24px 60px;
+  }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* 题目卡片 */
+  .qcard {
+    background: #fff;
+    border-radius: 20px;
+    box-shadow: 0 12px 36px rgba(255, 105, 180, 0.12);
+    padding: 30px 28px 26px;
+    margin-bottom: 16px;
+  }
+
+  .qhead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+
+  .qidx {
+    font-size: 12px;
+    color: #c8909c;
+    letter-spacing: 0.12em;
+    font-weight: 600;
+  }
+
+  .qprogress-bar {
+    width: 80px;
+    height: 4px;
+    background: #f7e1eb;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .qprogress-bar > span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #ff8aab, #ffaa6f);
+    width: 0;
+    transition: width 0.3s;
+  }
+
+  .qtext {
+    font-size: 17px;
+    line-height: 1.7;
+    color: #3a2a30;
+    margin-bottom: 22px;
+    min-height: 56px;
+  }
+
+  .options {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .opt {
+    position: relative;
+    padding: 12px 14px 12px 40px;
+    background: #fff7fa;
+    border: 2px solid #f3d8e2;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 14px;
+    color: #5a4046;
+    line-height: 1.5;
+    text-align: left;
+  }
+
+  .opt::before {
+    content: attr(data-letter);
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #fff;
+    border: 1.5px solid #f3d8e2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: #b0506a;
+    font-size: 12px;
+  }
+
+  .opt:hover {
+    border-color: #ff8aab;
+    background: #fff;
+    transform: translateY(-1px);
+  }
+
+  .opt.selected {
+    border-color: #ff6f95;
+    background: linear-gradient(135deg, #fff0f5, #ffe9d6);
+    color: #3a2a30;
+    font-weight: 600;
+  }
+
+  .opt.selected::before {
+    background: linear-gradient(135deg, #ff6fa1, #ff8c69);
+    color: #fff;
+    border-color: transparent;
+  }
+
+  /* 挑战模式：选项即时反馈 */
+  .opt.locked { cursor: default; }
+  .opt.locked:hover { transform: none; border-color: #f3d8e2; background: #fff7fa; }
+
+  .opt.correct {
+    border-color: #4caf80;
+    background: linear-gradient(135deg, #e6f7ee, #d8f0e3);
+    color: #2c5d44;
+    font-weight: 600;
+    animation: correctPop 0.5s ease;
+  }
+  .opt.correct::before {
+    background: linear-gradient(135deg, #4caf80, #6dd09a);
+    color: #fff;
+    border-color: transparent;
+  }
+
+  .opt.wrong {
+    border-color: #e07a8a;
+    background: linear-gradient(135deg, #fdecef, #fbdbe2);
+    color: #6a2a36;
+    font-weight: 600;
+    animation: wrongShake 0.4s ease;
+  }
+  .opt.wrong::before {
+    background: linear-gradient(135deg, #e07a8a, #f0a0ac);
+    color: #fff;
+    border-color: transparent;
+  }
+
+  @keyframes correctPop {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.04); }
+    100% { transform: scale(1); }
+  }
+  @keyframes wrongShake {
+    0%, 100% { transform: translateX(0); }
+    20%      { transform: translateX(-6px); }
+    40%      { transform: translateX(6px); }
+    60%      { transform: translateX(-4px); }
+    80%      { transform: translateX(4px); }
+  }
+
+  /* 反馈条 */
+  .feedback {
+    margin-top: 14px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    line-height: 1.5;
+    display: none;
+  }
+  .feedback.show { display: block; }
+  .feedback.correct {
+    background: linear-gradient(135deg, #e6f7ee, #d8f0e3);
+    color: #2c5d44;
+  }
+  .feedback.wrong {
+    background: linear-gradient(135deg, #fdecef, #fbdbe2);
+    color: #6a2a36;
+  }
+
+  /* 挑战模式得分条 */
+  .score-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #fff, #fff7fa);
+    border-radius: 12px;
+    box-shadow: 0 4px 14px rgba(176, 80, 106, 0.08);
+    margin-bottom: 14px;
+    font-size: 13px;
+    color: #8a6a72;
+  }
+  .score-bar .big {
+    font-size: 22px;
+    font-weight: 700;
+    color: #b0506a;
+    letter-spacing: 0.04em;
+  }
+  .score-bar .big small {
+    font-size: 12px;
+    color: #b89aa4;
+    font-weight: 500;
+    margin-left: 4px;
+  }
+
+  /* 分享 / 导入 区块 */
+  .share-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 18px 16px;
+    box-shadow: 0 6px 18px rgba(176, 80, 106, 0.08);
+    margin-bottom: 14px;
+  }
+  .share-card h4 {
+    font-size: 14px;
+    color: #b0506a;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .share-card p {
+    font-size: 12px;
+    color: #8a6a72;
+    line-height: 1.6;
+    margin-bottom: 10px;
+  }
+  .share-row {
+    display: flex;
+    gap: 8px;
+  }
+  .share-input {
+    flex: 1;
+    padding: 10px 12px;
+    border: 1.5px solid #f3d8e2;
+    border-radius: 10px;
+    font-size: 12px;
+    color: #5a4046;
+    background: #fff7fa;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+    letter-spacing: 0.04em;
+    min-width: 0;
+  }
+  .share-input:focus { outline: none; border-color: #ff8aab; background: #fff; }
+  .share-btn {
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #ff6fa1, #ff8c69);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .share-btn:hover { opacity: 0.92; }
+  .share-btn.ghost {
+    background: #fff;
+    color: #b0506a;
+    border: 1.5px solid #f3d8e2;
+  }
+  .share-btn.ghost:hover { border-color: #ff8aab; background: #fff7fa; }
+  .share-card .status {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #4caf80;
+    min-height: 16px;
+  }
+
+  /* 同步状态条 */
+  .sync-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding: 4px 4px;
+  }
+  .sync-bar .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ccc;
+    flex-shrink: 0;
+  }
+  .sync-bar .status-dot.online { background: #4caf80; box-shadow: 0 0 0 3px rgba(76, 175, 128, 0.2); }
+  .sync-bar .status-dot.err    { background: #e07a8a; }
+  .sync-bar .status-text {
+    font-size: 12px;
+    color: #8a6a72;
+  }
+  .sync-bar .status-text.online { color: #4caf80; }
+  .sync-bar .status-text.err    { color: #e07a8a; }
+
+  /* 导航按钮 */
+  .nav-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 18px;
+  }
+
+  .nav-btn {
+    flex: 1;
+    padding: 12px;
+    border-radius: 12px;
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .nav-btn.primary {
+    background: linear-gradient(135deg, #ff6fa1, #ff8c69);
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(255, 111, 161, 0.32);
+  }
+
+  .nav-btn.primary:hover { transform: translateY(-1px); }
+  .nav-btn.primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .nav-btn.ghost {
+    background: #fff;
+    color: #b0506a;
+    border: 1.5px solid #f3d8e2;
+  }
+
+  .nav-btn.ghost:hover { border-color: #ff8aab; }
+
+  /* 结果面板 */
+  .result-summary {
+    background: linear-gradient(135deg, #fff, #fff7fa);
+    border-radius: 24px;
+    padding: 30px 24px;
+    text-align: center;
+    margin-bottom: 18px;
+    box-shadow: 0 12px 36px rgba(255, 105, 180, 0.12);
+  }
+
+  .result-summary .emoji {
+    font-size: 36px;
+    margin-bottom: 10px;
+  }
+
+  .result-summary .score {
+    font-size: 42px;
+    font-weight: 700;
+    color: #b0506a;
+    letter-spacing: 0.04em;
+    line-height: 1;
+  }
+
+  .result-summary .score-sub {
+    font-size: 14px;
+    color: #9c7a82;
+    margin: 8px 0 4px;
+    letter-spacing: 0.04em;
+  }
+
+  .result-summary .verdict {
+    font-size: 14px;
+    color: #5a4046;
+    line-height: 1.6;
+    margin-top: 14px;
+  }
+
+  .result-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .result-item {
+    background: #fff;
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 4px 14px rgba(176, 80, 106, 0.07);
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 12px;
+    align-items: start;
+    border-left: 4px solid #f3d8e2;
+  }
+
+  .result-item.match { border-left-color: #ff8aab; background: #fffafb; }
+  .result-item.miss  { border-left-color: #d8c8be; }
+
+  .result-item .mark {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .result-item.match .mark { background: linear-gradient(135deg, #ff6fa1, #ff8c69); }
+  .result-item.miss .mark  { background: #c8b3a8; }
+
+  .result-item .body { min-width: 0; }
+
+  .result-item .qtitle {
+    font-size: 13px;
+    color: #5a4046;
+    margin-bottom: 6px;
+    line-height: 1.5;
+  }
+
+  .result-item .choices {
+    display: grid;
+    gap: 4px;
+    font-size: 12px;
+    color: #8a6a72;
+  }
+
+  .result-item .choices .row {
+    display: grid;
+    grid-template-columns: 70px 1fr;
+    align-items: start;
+    gap: 8px;
+    line-height: 1.5;
+  }
+
+  .result-item .choices .who {
+    color: #b0506a;
+    font-weight: 600;
+    text-align: right;
+  }
+
+  .empty-tip {
+    background: #fff;
+    border-radius: 16px;
+    padding: 30px 24px;
+    text-align: center;
+    color: #8a6a72;
+    font-size: 14px;
+    line-height: 1.7;
+    box-shadow: 0 4px 14px rgba(176, 80, 106, 0.07);
+  }
+
+  /* 返回首页 */
+  .home-link {
+    display: block;
+    text-align: center;
+    margin: 28px auto;
+    color: #b0506a;
+    text-decoration: none;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+  }
+
+  .home-link:hover { text-decoration: underline; }
+
+  @media (max-width: 480px) {
+    .options { grid-template-columns: 1fr; }
+    .role-options { grid-template-columns: 1fr; }
+    .topbar { padding: 14px 16px; }
+    .tabs { padding: 0 16px; }
+    .content { padding: 0 16px 60px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar" id="topbar">
+  <div class="logo">默契挑战</div>
+  <div class="role-box" id="roleBox"></div>
+</div>
+
+<div id="entryArea">
+  <!-- 静态骨架：即使 JS 完全没跑，也至少显示一张卡（避免出现纯空白页面） -->
+  <noscript>
+    <div class="role-card"><h2>需要启用 JavaScript</h2><p>请在浏览器中启用 JavaScript 后刷新本页面。</p></div>
+  </noscript>
+  <div class="role-card" id="entrySkeleton">
+    <h2>默契挑战</h2>
+    <p style="margin-bottom:18px;">正在加载…请稍候。<br>如果长时间停留，请按 <b>Ctrl/Cmd + Shift + R</b> 强制刷新。</p>
+    <div class="role-options" aria-hidden="true">
+      <div class="role-option" style="opacity:.55;cursor:default"><div class="label">ggh</div><div class="hint">A 玩家</div></div>
+      <div class="role-option" style="opacity:.55;cursor:default"><div class="label">hsq</div><div class="hint">B 玩家</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="mainArea" style="display:none;">
+  <div class="sync-bar" id="syncBar">
+    <span class="status-dot" id="syncDot"></span>
+    <span class="status-text" id="syncStatus">未连接</span>
+    <button id="syncRefreshBtn" style="margin-left:auto;padding:2px 10px;font-size:12px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">↻ 刷新同步</button>
+    <button id="diagnoseBtn" style="margin-left:6px;padding:2px 10px;font-size:12px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;">🔍 诊断</button>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="setup">设置答案<span class="progress" id="progSetup"></span></div>
+    <div class="tab" data-tab="challenge">挑战对方<span class="progress" id="progChallenge"></span></div>
+    <div class="tab" data-tab="result">默契结果</div>
+  </div>
+
+  <div class="content">
+    <!-- Tab 1：设置自己的答案 -->
+    <div class="panel active" id="panel-setup"></div>
+
+    <!-- Tab 2：挑战对方 -->
+    <div class="panel" id="panel-challenge"></div>
+
+    <!-- Tab 3：结果 -->
+    <div class="panel" id="panel-result"></div>
+  </div>
+</div>
+
+<a class="home-link" href="index.html">← 返回首页</a>
+
+<script>
+'use strict';
+
+let QUESTIONS = [];
+
+/* ---------- 工具：本地存储 ---------- */
+const storage = {
+  get(key, fallback) {
+    try {
+      const v = localStorage.getItem(key);
+      return v == null ? fallback : JSON.parse(v);
+    } catch (_) { return fallback; }
+  },
+  set(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch (_) {}
+  },
+  remove(key) {
+    try { localStorage.removeItem(key); } catch (_) {}
+  }
+};
+
+/* ---------- 角色相关 key ---------- */
+function myAnswersKey(role)  { return 'tacit_' + role + '_answers'; }
+function myGuessKey(role)    { return 'tacit_' + role + '_guess'; }
+function partnerRole(role)   { return role === 'a' ? 'b' : 'a'; }
+function partnerNameOf(role) { return role === 'a' ? 'hsq' : 'ggh'; }
+function myNameOf(role)      { return role === 'a' ? 'ggh' : 'hsq'; }
+
+/* ---------- Supabase 客户端（异步初始化；未就绪时优雅降级）---------- */
+const SUPABASE_URL = 'https://vkbigxnktcfxqgdatbxl.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_4Ur_2FA35wepbQKqwv3ImQ_Gx8dcf-n';
+const ROOM_CODE = 'tacit_default'; // 全宇宙就一对
+let supabase = null;
+let supabaseReady = false;
+function tryInitSupabase() {
+  console.log('[supabase] tryInitSupabase called; SDK ready?', !!(window.supabase && window.supabase.createClient));
+  try {
+    if (window.supabase && typeof window.supabase.createClient === 'function') {
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      supabaseReady = true;
+      console.log('[supabase] initialized, URL = ' + SUPABASE_URL);
+      if (storage.get('tacit_role')) {
+        syncNow();
+        subscribePartner();
+      }
+    } else {
+      console.warn('[supabase] SDK 仍未就绪');
+    }
+  } catch (e) {
+    console.warn('[supabase] 初始化失败：', e && e.message, e && e.stack);
+  }
+}
+
+// 实时订阅：对方答案发生变化时立刻同步（替代旧的定时轮询）
+let partnerChannel = null;
+function subscribePartner() {
+  if (!supabaseReady || !supabase) return;
+  if (partnerChannel) return;
+  try {
+    partnerChannel = supabase
+      .channel('tacit_pair_' + ROOM_CODE)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'tacit_answers', filter: 'room_code=eq.' + ROOM_CODE },
+        (payload) => {
+          console.log('[realtime] partner changed:', payload);
+          syncNow();
+        })
+      .subscribe((status) => {
+        console.log('[realtime] channel status =', status);
+      });
+  } catch (e) {
+    console.warn('[realtime] subscribe failed:', e && e.message);
+  }
+}
+// SDK 是同步 <script> 加载，DOMContentLoaded 时必然就绪
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', tryInitSupabase);
+} else {
+  tryInitSupabase();
+}
+window.addEventListener('load', tryInitSupabase);
+
+/* ---------- 工具：上传 / 拉取答案（key 固定 room_code = 'tacit_default'）---------- */
+async function uploadAnswers(role, answers) {
+  if (!supabaseReady || !supabase) return { ok: false, error: 'no supabase' };
+  try {
+    const { data, error } = await supabase
+      .from('tacit_answers')
+      .upsert({ room_code: ROOM_CODE, role, answers },
+              { onConflict: 'room_code,role' })
+      .select();
+    if (error) { console.error('[upload] supabase error:', error); return { ok: false, error: error.message }; }
+    console.log('[upload] ok role=' + role, data);
+    return { ok: true };
+  } catch (e) {
+    console.error('[upload] throw:', e);
+    return { ok: false, error: (e && e.message) || 'upload failed' };
+  }
+}
+
+async function fetchPairAnswers() {
+  if (!supabaseReady || !supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('tacit_answers')
+      .select('role,answers')
+      .eq('room_code', ROOM_CODE);
+    if (error) { console.error('[fetch] supabase error:', error); return []; }
+    console.log('[fetch] rows count=' + (data ? data.length : 0), data);
+    return data || [];
+  } catch (e) {
+    console.error('[fetch] throw:', e);
+    return [];
+  }
+}
+
+/* ---------- 防抖上传自己的答案 ---------- */
+let uploadTimer = null;
+function scheduleUpload() {
+  if (uploadTimer) clearTimeout(uploadTimer);
+  uploadTimer = setTimeout(() => {
+    uploadTimer = null;
+    syncNow();
+  }, 1200);
+}
+
+/* ---------- 诊断：手动跑一遍并把状态打到 console + 弹窗 ---------- */
+async function diagnose() {
+  const lines = [];
+  lines.push('SUPABASE_URL = ' + SUPABASE_URL);
+  lines.push('SUPABASE_ANON_KEY length = ' + (SUPABASE_ANON_KEY || '').length);
+  lines.push('window.supabase = ' + !!window.supabase);
+  lines.push('supabaseReady = ' + supabaseReady);
+  lines.push('ROOM_CODE = ' + ROOM_CODE);
+  lines.push('supabase.from exists = ' + !!(supabase && supabase.from));
+
+  // 试试 fetch
+  try {
+    const { data, error, status } = await supabase
+      .from('tacit_answers')
+      .select('role')
+      .eq('room_code', ROOM_CODE);
+    lines.push('fetch.status = ' + status);
+    lines.push('fetch.error = ' + (error ? JSON.stringify(error) : 'null'));
+    lines.push('fetch.data = ' + JSON.stringify(data));
+  } catch (e) {
+    lines.push('fetch.throw = ' + (e && e.message));
+  }
+
+  console.log('[diagnose]\n' + lines.join('\n'));
+  alert('[诊断结果，已复制到 console]\n\n' + lines.join('\n'));
+}
+function startPolling() {
+  // 不再轮询：仅在产生必要操作时同步（setup 完成、challenge 完成、手动刷新、tab 切换）。
+  // 保留此函数以兼容旧调用入口。
+}
+
+function setSyncStatus(state, text) {
+  const dot = document.getElementById('syncDot');
+  const ss  = document.getElementById('syncStatus');
+  if (!dot || !ss) return;
+  dot.classList.remove('online', 'err');
+  ss.classList.remove('online', 'err');
+  if (state === 'online') {
+    dot.classList.add('online');
+    ss.classList.add('online');
+    ss.textContent = text || '已连接';
+  } else if (state === 'err') {
+    dot.classList.add('err');
+    ss.classList.add('err');
+    ss.textContent = text || '连接失败';
+  } else {
+    ss.textContent = text || '未连接';
+  }
+}
+
+function bindSyncIndicator() {
+  // 初始化一次状态；4 秒后如果还没真正初始化就提示
+  setSyncStatus('idle', supabaseReady ? '未连接' : '连接中…');
+  setTimeout(() => {
+    if (!supabaseReady) {
+      setSyncStatus('err', '云同步未就绪');
+      console.error('[supabase] 4 秒后仍未 ready，请检查网络');
+    }
+  }, 4000);
+  // 手动刷新按钮
+  const btn = document.getElementById('syncRefreshBtn');
+  if (btn && !btn.__bound) {
+    btn.__bound = true;
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      btn.textContent = '同步中…';
+      syncNow().finally(() => {
+        btn.disabled = false;
+        btn.textContent = '↻ 刷新同步';
+      });
+    });
+  }
+  // 诊断按钮
+  const dbg = document.getElementById('diagnoseBtn');
+  if (dbg && !dbg.__bound) {
+    dbg.__bound = true;
+    dbg.addEventListener('click', () => {
+      if (!supabaseReady) {
+        alert('Supabase SDK 还没准备好，等几秒再试');
+        return;
+      }
+      diagnose();
+    });
+  }
+}
+
+/* 同步：把本地答案推到云端，并拉取对方答案 */
+async function syncNow() {
+  const role = storage.get('tacit_role');
+  if (!role) return;
+  if (!supabaseReady) {
+    setSyncStatus('idle', '连接中…');
+    return;
+  }
+
+  const myAns = storage.get(myAnswersKey(role), {});
+  if (Object.keys(myAns).length > 0) {
+    setSyncStatus('idle', '上传中…');
+    const r = await uploadAnswers(role, myAns);
+    if (!r.ok) {
+      // 上传失败时保留旧 partner，不要清空（避免网络抖动把 UI 退回等待）
+      setSyncStatus('err', '上传失败: ' + r.error);
+      return;
+    }
+  }
+
+  const rows = await fetchPairAnswers();
+  const partnerKey = partnerRole(role);
+  const partnerRow = rows.find(r => r.role === partnerKey);
+
+  // 解析 answers：PostgREST 返回的 jsonb 字段已经是对象；但容错一下字符串
+  const partnerAnswers = partnerRow && partnerRow.answers
+    ? (typeof partnerRow.answers === 'string' ? safeParse(partnerRow.answers) : partnerRow.answers)
+    : null;
+
+  if (partnerAnswers && Object.keys(partnerAnswers).length > 0) {
+    storage.set('tacit_partner', partnerAnswers);
+    const partnerName = partnerNameOf(role);
+    setSyncStatus('online', `${partnerName} 已就绪 ✓`);
+  } else {
+    // 拉取不到时**不**清空旧 partner（避免 UI 来回跳）
+    const old = storage.get('tacit_partner', null);
+    if (old && Object.keys(old).length > 0) {
+      setSyncStatus('online', `${partnerNameOf(role)} 已就绪 ✓（缓存）`);
+    } else {
+      storage.remove('tacit_partner');
+      setSyncStatus('idle', `等待 ${partnerNameOf(role)} 答完题目…`);
+    }
+  }
+
+  if (typeof currentTab !== 'undefined') {
+    if (currentTab === 'setup')     renderSetupPanel(role);
+    if (currentTab === 'challenge') renderChallengePanel(role);
+    if (currentTab === 'result')    renderResultPanel(role);
+  }
+  if (typeof updateTabProgress === 'function') updateTabProgress();
+}
+
+function safeParse(s) {
+  try { return JSON.parse(s); } catch (_) { return null; }
+}
+
+/* ---------- 内嵌题库（file:// 和 fetch 失败时的 fallback）---------- */
+const EMBEDDED_QUESTIONS = `1. 如果周末有一整天可以赖在一起，你最想怎么过？|两个人一起赖床到中午|一起出门逛街吃饭|各自玩手机但靠在一起|一起做一顿饭
+2. 你希望和 ta 一起去的城市是哪种？|海边城市|有雪的山城|历史古城|现代都市
+3. 两个人在一起吃早餐时，你更喜欢？|对方做给我吃|一起出门吃|边吃边刷手机|不吃先亲一口
+4. 下雨天你们窝在家的画面是？|各干各的但靠近|一起看一部电影|一起做饭|一起听雨发呆
+5. 吵架后谁先低头认错更让你心动？|我主动道歉|等 ta 来哄我|谁错了谁先说|不知不觉就和好了
+6. 如果可以在 ta 身上加一个超能力，你最想要？|永远不生气|随时能知道我在想什么|瞬间出现在我身边|永远不会生病
+7. 异地的时候你最怕对方？|突然消失不回消息|开始敷衍聊天|忘记重要日期|嘴上说想我但没行动
+8. 见面时你最想收到的第一个动作是？|紧紧抱住我|亲我一下|牵手|递上一杯热水
+9. 如果 ta 突然出现在你公司楼下，你第一反应是？|开心到飞起冲下去|假装淡定再偷偷高兴|先发消息问真假|担心 ta 出什么事了
+10. 你最希望我们第一个一起养的宠物是？|猫|狗|仓鼠|先养对方再说
+11. 关于"早安"和"晚安"，你更想要？|每天必发的早安|每天必打的晚安电话|两者都要|看心情随意就好
+12. 当我心情不好时，你最希望我？|打电话过来|发消息告诉你|自己消化完再说|直接订票出现在你面前
+13. 你希望我们最常约会的地点是？|安静的咖啡馆|热闹的商场|户外的公园|家里
+14. 如果我们一起做饭，你更想负责？|洗菜切配|掌勺主厨|洗碗收尾|在旁边陪着聊天
+15. 关于未来住什么样的房子，你最期待？|带阳台的小公寓|带院子的大房子|loft 工作室|只要和 ta 住哪里都行
+16. 你最希望 ta 送你哪种礼物？|手写信件|精心挑选的实物|一次说走就走的旅行|日常小惊喜
+17. 异地的时候你最想念 ta 的什么？|ta 的声音|ta 的怀抱|ta 做的饭|ta 在身边的感觉
+18. 两个人一起看电影的姿势，你更想要？|靠着 ta 肩膀|被 ta 抱在怀里|各坐一边但手牵手|一边看一边评论
+19. 如果可以选择，你更希望 ta 是？|成熟稳重型|阳光开朗型|温柔细腻型|和我一样傻乎乎的
+20. 你最不能忍受 ta 的哪种习惯？|忘记回消息|不爱收拾|什么都闷在心里|打游戏不理我
+21. 异地视频通话时，你最希望 ta 出现在？|起床第一时间|午休时|睡前|不定时惊喜
+22. 如果我们只能记住关于对方的 3 件事，你想记住？|第一次见面的样子|第一次牵手的感觉|最感动的一次|吵架和好的过程
+23. 关于未来规划，你更想？|一起存钱买房|每年至少一次旅行|先把当下过好|走一步算一步
+24. 你觉得对方最像哪种甜点？|奶茶|提拉米苏|马卡龙|冰激凌
+25. 你希望婚礼是？|盛大隆重|温馨小众|旅行结婚|补办就好
+26. 关于一起做家务，你希望？|明确分工|谁有空谁做|请个阿姨|谁爱干净谁做
+27. 如果 ta 突然哭了，你希望先做的事是？|抱住 ta 不说话|问 ta 怎么了|给 ta 倒杯水|先陪着坐一会儿
+28. 你最想要的纪念日是哪种？|纪念第一次见面|纪念在一起的日子|纪念某一个特别的瞬间|每天都当纪念日
+29. 关于发朋友圈秀恩爱，你是？|经常发|偶尔发|从不发|看心情
+30. 如果我们有一天被困在一个小岛上，只能带 3 样东西，你最想带？|充电宝|一本想读的书|防晒霜|和 ta 相处的回忆`;
+
+function parseQuestionsText(text) {
+  return text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line && /^\d+\./.test(line))
+    .map((line, i) => {
+      const m = line.match(/^(\d+)\.\s*(.+)$/);
+      if (!m) return null;
+      const id = parseInt(m[1], 10);
+      const parts = m[2].split('|').map(p => p.trim());
+      if (parts.length < 5) return null;
+      return { id, text: parts[0], options: parts.slice(1, 5) };
+    })
+    .filter(Boolean);
+}
+
+async function loadQuestions() {
+  // 直接使用内嵌题库（不再 fetch，避免 file:// / 路径 / 网络 任何问题）
+  const text = EMBEDDED_QUESTIONS;
+  QUESTIONS = parseQuestionsText(text);
+  if (QUESTIONS.length === 0) {
+    throw new Error('内嵌题库为空（' + text.length + ' 字符）');
+  }
+}
+
+/* ---------- 入口：角色选择 / 已有角色直接进 ---------- */
+function renderEntry() {
+  const role = storage.get('tacit_role', null);
+  const entry = document.getElementById('entryArea');
+  const main = document.getElementById('mainArea');
+  const roleBox = document.getElementById('roleBox');
+
+  if (!role) {
+    entry.innerHTML = `
+      <div class="role-card">
+        <h2>你是？</h2>
+        <p>选好身份后开始答题，答案会自动同步给对方 ✨</p>
+        <div class="role-options">
+          <div class="role-option" data-role="a">
+            <div class="label">ggh</div>
+            <div class="hint">A 玩家</div>
+          </div>
+          <div class="role-option" data-role="b">
+            <div class="label">hsq</div>
+            <div class="hint">B 玩家</div>
+          </div>
+        </div>
+      </div>
+    `;
+    main.style.display = 'none';
+    entry.querySelectorAll('.role-option').forEach(el => {
+      el.addEventListener('click', () => {
+        const r = el.getAttribute('data-role');
+        storage.set('tacit_role', r);
+        renderEntry();
+        initMain();
+      });
+    });
+    roleBox.innerHTML = '';
+    return;
+  }
+
+  entry.innerHTML = '';
+  main.style.display = '';
+  roleBox.innerHTML = `
+    <span class="role-pill">${myNameOf(role)} (${role.toUpperCase()})</span>
+    <button class="role-btn" id="resetRole">切换</button>
+  `;
+  document.getElementById('resetRole').addEventListener('click', () => {
+    if (confirm('确认切换身份吗？切换不会清空已有答案。')) {
+      storage.remove('tacit_role');
+      renderEntry();
+    }
+  });
+}
+
+/* ---------- 主区 ---------- */
+let currentTab = 'setup';
+let activeQid = 0; // 当前题号（用于 setup & challenge 两 Tab）
+
+function initMain() {
+  bindTabs();
+  bindSyncIndicator();
+  renderPanel('setup');
+  renderPanel('challenge');
+  renderPanel('result');
+  updateTabProgress();
+  startPolling();
+  // 同步由 tryInitSupabase / switchTab / 答题回调触发；此处不重复触发
+}
+
+
+function bindTabs() {
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+      const tab = t.getAttribute('data-tab');
+      switchTab(tab);
+    });
+  });
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.getAttribute('data-tab') === tab);
+  });
+  document.querySelectorAll('.panel').forEach(p => {
+    p.classList.toggle('active', p.id === 'panel-' + tab);
+  });
+  if (tab === 'setup')     renderPanel('setup');
+  if (tab === 'challenge') renderPanel('challenge');
+  if (tab === 'result')    renderPanel('result');
+  // 切到挑战/结果 Tab 时主动拉取一次对方答案，避免错过对方刚答完的情况
+  if (tab === 'challenge' || tab === 'result') {
+    syncNow();
+  }
+}
+
+/* ---------- 进度显示 ---------- */
+function updateTabProgress() {
+  const role = storage.get('tacit_role');
+  if (!role) return;
+  const total = QUESTIONS.length;
+  const mine = storage.get(myAnswersKey(role), {});
+  const guess = storage.get(myGuessKey(role), {});
+  document.getElementById('progSetup').textContent =
+    Object.keys(mine).length + '/' + total;
+  document.getElementById('progChallenge').textContent =
+    Object.keys(guess).length + '/' + total;
+}
+
+/* ---------- 渲染三个面板 ---------- */
+function renderPanel(name) {
+  const role = storage.get('tacit_role');
+  if (!role) return;
+
+  if (name === 'setup')    return renderSetupPanel(role);
+  if (name === 'challenge')return renderChallengePanel(role);
+  if (name === 'result')   return renderResultPanel(role);
+}
+
+/* ---------- Setup Tab：设置自己的答案 ---------- */
+async function resetSetupAnswers(role) {
+  if (!confirm('确定要清空你设置的所有答案吗？\n\n此操作会同时删除云端已同步的答案，且不可恢复。')) return;
+  storage.remove(myAnswersKey(role));
+  // 删除云端行：直接 delete，让 row 完全消失，对方能立刻看到"等待中"
+  if (supabaseReady && supabase) {
+    try {
+      const { error } = await supabase
+        .from('tacit_answers')
+        .delete()
+        .eq('room_code', ROOM_CODE)
+        .eq('role', role);
+      if (error) {
+        console.error('[reset] delete failed:', error);
+        alert('云端清空失败：' + error.message + '\n本地已清空，请稍后手动刷新同步。');
+      }
+    } catch (e) {
+      console.error('[reset] delete throw:', e);
+    }
+  }
+  // 取消可能挂起的防抖上传
+  if (uploadTimer) { clearTimeout(uploadTimer); uploadTimer = null; }
+  activeQid = 0;
+  renderSetupPanel(role);
+  updateTabProgress();
+  // 主动同步一次（让对方实时看到我这边清空了）
+  syncNow();
+}
+
+function renderSetupPanel(role) {
+  const panel = document.getElementById('panel-setup');
+  const stored = storage.get(myAnswersKey(role), {});
+  const total = QUESTIONS.length;
+  const done = Object.keys(stored).length;
+
+  // 全部完成 → 显示完成态
+  if (done >= total) {
+    panel.innerHTML = `
+      <div class="empty-tip" style="background:linear-gradient(135deg,#e6f7ee,#d8f0e3);color:#2c5d44;">
+        你已经答完所有 ${done} 道题 ✓<br>
+        答案已自动同步给对方。<br>
+        切换到 <b>「挑战对方」</b> Tab，等 ta 也答完就能开始猜了 💪
+      </div>
+      <div class="nav-row" style="margin-top:18px;">
+        <button class="nav-btn ghost" id="resetSetupBtn">清空并重新设置</button>
+      </div>
+    `;
+    const resetBtn = panel.querySelector('#resetSetupBtn');
+    if (resetBtn) resetBtn.addEventListener('click', () => resetSetupAnswers(role));
+    return;
+  }
+
+  let idx = 0;
+  for (let i = 0; i < QUESTIONS.length; i++) {
+    if (!stored[QUESTIONS[i].id]) { idx = i; break; }
+  }
+  activeQid = idx;
+  const q = QUESTIONS[idx];
+
+  panel.innerHTML = buildQCard(q, idx, stored[q.id], false, role);
+
+  // 在卡片底部追加"清空并重新设置"入口
+  const resetBar = document.createElement('div');
+  resetBar.className = 'nav-row';
+  resetBar.style.marginTop = '4px';
+  resetBar.innerHTML = `
+    <button class="nav-btn ghost" id="resetSetupBtn" style="font-size:13px;color:#8a6a72;border-color:#eee;">清空并重新设置</button>
+  `;
+  panel.appendChild(resetBar);
+  const resetBtn = panel.querySelector('#resetSetupBtn');
+  if (resetBtn) resetBtn.addEventListener('click', () => resetSetupAnswers(role));
+
+  bindQCardEvents(panel, q, myAnswersKey(role), stored, false, role);
+}
+
+function buildQCard(q, idx, selectedLetter, isChallenge, role) {
+  const total = QUESTIONS.length;
+  return `
+    <div class="qcard">
+      <div class="qhead">
+        <span class="qidx">第 ${idx + 1} / ${total} 题</span>
+        <div class="qprogress-bar"><span style="width:${(idx / total * 100).toFixed(0)}%"></span></div>
+      </div>
+      <div class="qtext">${escapeHTML(q.text)}</div>
+      <div class="options" id="opts">
+        ${q.options.map((opt, i) => `
+          <div class="opt${isChallenge ? ' locked' : ''}" data-letter="${'ABCD'[i]}" data-opt="${i}">
+            ${escapeHTML(opt)}
+          </div>
+        `).join('')}
+      </div>
+      <div class="feedback" id="fb"></div>
+      <div class="nav-row">
+        <button class="nav-btn ghost" id="prevBtn" ${idx === 0 ? 'disabled' : ''}>上一题</button>
+        <button class="nav-btn primary" id="nextBtn">${idx === total - 1 ? '完成' : '下一题'}</button>
+      </div>
+    </div>
+  `;
+}
+
+function bindQCardEvents(panel, q, storeKey, stored, isChallenge, role) {
+  const optsEl = panel.querySelectorAll('.opt');
+  let answered = stored[q.id] || null;
+
+  optsEl.forEach(el => {
+    el.addEventListener('click', () => {
+      if (isChallenge && !panel.dataset.ready) return;
+      if (answered) return;
+
+      const letter = el.getAttribute('data-letter');
+      answered = letter;
+
+      optsEl.forEach(o => o.classList.remove('selected'));
+      el.classList.add('selected');
+
+      const cur = storage.get(storeKey, {});
+      cur[q.id] = letter;
+      storage.set(storeKey, cur);
+      updateTabProgress();
+
+  if (isChallenge) {
+    // 即时反馈
+    optsEl.forEach(o => { o.classList.add('locked'); o.classList.remove('selected'); });
+    el.classList.add('selected');
+    const partnerAns = storage.get('tacit_partner', null);
+    const partnerLetter = partnerAns ? partnerAns[q.id] : null;
+    const fb = panel.querySelector('#fb');
+
+    if (partnerLetter) {
+      const isMatch = letter === partnerLetter;
+      fb.className = `feedback show ${isMatch ? 'correct' : 'wrong'}`;
+      if (isMatch) {
+        fb.textContent = '太棒了！猜对了！';
+        el.classList.add('correct');
+      } else {
+        fb.textContent = `不对哦，ta 的答案是 ${partnerLetter}。`;
+        el.classList.add('wrong');
+        const correctOpt = panel.querySelector(`.opt[data-letter="${partnerLetter}"]`);
+        if (correctOpt) correctOpt.classList.add('correct');
+      }
+      // 更新得分条
+      updateChallengeScore(role);
+    } else {
+      fb.className = 'feedback show';
+      fb.textContent = '已保存 ✓（等对方答完即可判分）';
+    }
+    // challenge 答题也算一次"必要操作"，同步一次：把猜测上传、顺便拉取对方最新答案
+    syncNow();
+  } else {
+    // setup 模式：每答一题就防抖上传；如果是答完最后一道（doneCount >= total）则立即同步一次，确保对方尽快看到
+    const doneCount = Object.keys(storage.get(myAnswersKey(role), {})).length;
+    if (doneCount >= QUESTIONS.length) {
+      syncNow();
+    } else {
+      scheduleUpload();
+    }
+  }
+});
+  });
+
+  if (stored[q.id] && !isChallenge) {
+    const target = panel.querySelector(`.opt[data-letter="${stored[q.id]}"]`);
+    if (target) target.classList.add('selected');
+  }
+
+  panel.querySelector('#prevBtn').addEventListener('click', () => {
+    if (activeQid > 0) {
+      activeQid--;
+      if (isChallenge) renderChallengePanel(role);
+      else renderSetupPanel(role);
+    }
+  });
+
+  panel.querySelector('#nextBtn').addEventListener('click', () => {
+    const cur = storage.get(storeKey, {});
+    if (!cur[q.id]) {
+      const fb = panel.querySelector('#fb');
+      if (fb) { fb.className = 'feedback show'; fb.textContent = '请先选择一个答案'; }
+      return;
+    }
+    if (isChallenge) {
+      // 跳到下一道未答或已答的题（总是可以翻页）
+      const done = storage.get(storeKey, {});
+      let next = -1;
+      for (let i = activeQid + 1; i < QUESTIONS.length; i++) {
+        next = i; break;
+      }
+      if (next < 0 && activeQid > 0) next = 0;
+      if (next >= 0) { activeQid = next; renderChallengePanel(role); }
+      else renderChallengePanel(role);
+    } else {
+      const done2 = storage.get(myAnswersKey(role), {});
+      const doneCount = Object.keys(done2).length;
+      if (doneCount >= QUESTIONS.length) {
+        renderSetupPanel(role);
+        // 已答完全部题目，立即触发一次同步
+        syncNow();
+      } else {
+        for (let i = activeQid + 1; i < QUESTIONS.length; i++) {
+          if (!done2[QUESTIONS[i].id]) { activeQid = i; break; }
+        }
+        renderSetupPanel(role);
+      }
+    }
+  });
+}
+
+/* ---------- Challenge Tab：猜对方的答案 ---------- */
+async function resetChallengeAnswers(role) {
+  if (!confirm('确定要清空你所有的"猜"吗？\n\n只会清空本地的猜测记录，不会影响对方已答的题目。')) return;
+  storage.remove(myGuessKey(role));
+  activeQid = 0;
+  renderChallengePanel(role);
+  updateTabProgress();
+}
+
+function renderChallengePanel(role) {
+  const panel = document.getElementById('panel-challenge');
+  const stored = storage.get(myGuessKey(role), {});
+  const partner = storage.get('tacit_partner', null);
+
+  const score = calcChallengeScore(role);
+  const done = Object.keys(stored).length;
+
+  let topHtml = '';
+  if (partner) {
+    const partnerName = partnerNameOf(role);
+    topHtml = `
+      <div class="score-bar" id="challengeScoreBar">
+        <span>${partnerName} 已就绪 · 当前得分</span>
+        <span class="big">${score}/${done}<small> 题</small></span>
+      </div>
+    `;
+  } else {
+    topHtml = `
+      <div class="empty-tip" id="challengeWait">
+        ⏳ 等待 ${partnerNameOf(role)} 答完题目。<br>
+        答完会自动同步，你可以先猜着，猜完会自动判分。
+      </div>
+    `;
+  }
+
+  panel.innerHTML = topHtml;
+
+  // 找到下一道未答题；全答完则停在第一道（让用户能从头重看/重置）
+  let idx = -1;
+  for (let i = 0; i < QUESTIONS.length; i++) {
+    if (!stored[QUESTIONS[i].id]) { idx = i; break; }
+  }
+  if (idx < 0) idx = 0;
+  activeQid = idx;
+  const q = QUESTIONS[idx];
+  panel.dataset.ready = '1';
+  panel.innerHTML += buildQCard(q, idx, stored[q.id], true, role);
+
+  // 在卡片底部追加"清空并重新答题"入口
+  const resetBar = document.createElement('div');
+  resetBar.className = 'nav-row';
+  resetBar.style.marginTop = '4px';
+  resetBar.innerHTML = `
+    <button class="nav-btn ghost" id="resetChallengeBtn" style="font-size:13px;color:#8a6a72;border-color:#eee;">清空并重新答题</button>
+  `;
+  panel.appendChild(resetBar);
+  const resetBtn = panel.querySelector('#resetChallengeBtn');
+  if (resetBtn) resetBtn.addEventListener('click', () => resetChallengeAnswers(role));
+
+  bindQCardEvents(panel, q, myGuessKey(role), stored, true, role);
+}
+
+function calcChallengeScore(role) {
+  const guess = storage.get(myGuessKey(role), {});
+  const partner = storage.get('tacit_partner', null);
+  if (!partner) return 0;
+  let count = 0;
+  for (const qid in guess) {
+    if (guess[qid] === partner[qid]) count++;
+  }
+  return count;
+}
+
+function updateChallengeScore(role) {
+  const bar = document.getElementById('challengeScoreBar');
+  if (!bar) return;
+  const guess = storage.get(myGuessKey(role), {});
+  const partner = storage.get('tacit_partner', null);
+  if (!partner) return;
+  let count = 0;
+  for (const qid in guess) {
+    if (guess[qid] === partner[qid]) count++;
+  }
+  const done = Object.keys(guess).length;
+  bar.querySelector('.big').innerHTML = `${count}/${done}<small> 题</small>`;
+}
+
+/* ---------- 结果面板 ---------- */
+function renderResultPanel(myRole) {
+  const panel = document.getElementById('panel-result');
+  const myAns   = storage.get(myAnswersKey(myRole), {});
+  const myGuess = storage.get(myGuessKey(myRole), {});
+  const partner = storage.get('tacit_partner', null);
+
+  // 当 challenge 模式下导入过对方答案，按"我猜 vs 对方答案"算得分
+  if (partner) {
+    let total = 0, hit = 0;
+    const rows = [];
+    for (let i = 0; i < QUESTIONS.length; i++) {
+      const q = QUESTIONS[i];
+      const g = myGuess[q.id];
+      const truth = partner[q.id];
+      if (!g || !truth) continue;
+      total++;
+      const isMatch = g === truth;
+      if (isMatch) hit++;
+      rows.push({ q, g, truth, isMatch });
+    }
+    if (total === 0) {
+      panel.innerHTML = `
+        <div class="empty-tip">
+          还没有挑战记录哦。<br>
+          去 <b>「挑战对方」</b> Tab 答几道题再来查看。
+        </div>
+      `;
+      return;
+    }
+    const percent = Math.round(hit / total * 100);
+    let verdict = '继续加油，多聊聊会更默契 ✨';
+    if (percent >= 90) verdict = '心有灵犀一点通，你们是天作之合 ❤️';
+    else if (percent >= 70) verdict = '默契度很高，是懂对方的人 💕';
+    else if (percent >= 50) verdict = '不错不错，对方有点被你拿捏了 😉';
+    else verdict = '还有许多可探索的空间，今晚打个电话聊聊？📞';
+
+    let emoji = '💌';
+    if (percent >= 90) emoji = '💖';
+    else if (percent >= 70) emoji = '💕';
+    else if (percent >= 50) emoji = '🌸';
+    else emoji = '🌱';
+
+    const htmlRows = rows.map(({ q, g, truth, isMatch }) => {
+      const gOpt = q.options['ABCD'.indexOf(g)];
+      const tOpt = q.options['ABCD'.indexOf(truth)];
+      return `
+        <div class="result-item ${isMatch ? 'match' : 'miss'}">
+          <div class="mark">${isMatch ? '✓' : '✗'}</div>
+          <div class="body">
+            <div class="qtitle">${escapeHTML(q.text)}</div>
+            <div class="choices">
+              <div class="row"><span class="who">你猜(${g})</span><span>${escapeHTML(gOpt)}</span></div>
+              <div class="row"><span class="who">ta(${truth})</span><span>${escapeHTML(tOpt)}</span></div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    panel.innerHTML = `
+      <div class="result-summary">
+        <div class="emoji">${emoji}</div>
+        <div class="score">${hit} / ${total}</div>
+        <div class="score-sub">最终默契度 · 双方已对齐</div>
+        <div class="verdict">${verdict}</div>
+      </div>
+      <div class="result-list">${htmlRows}</div>
+    `;
+    return;
+  }
+
+  // 没导入对方答案：提示用户去导入
+  panel.innerHTML = `
+    <div class="empty-tip">
+      还在等待 ${partnerNameOf(myRole)} 完成答题。<br>
+      对方答完会自动同步过来。
+    </div>
+  `;
+}
+
+/* ---------- 工具：HTML 转义 ---------- */
+function escapeHTML(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+/* ---------- 启动 ---------- */
+function showBootError(e) {
+  console.error('boot failed:', e);
+  const msg = (e && (e.stack || e.message || String(e))) || 'unknown';
+  const el = document.getElementById('entryArea');
+  if (el) {
+    el.innerHTML = `
+      <div class="role-card" style="border:2px solid #e07a8a;">
+        <h2>页面加载出错</h2>
+        <p style="font-size:12px;color:#8a4046;margin-bottom:8px;">请按 <b>Ctrl/Cmd + Shift + R</b> 强制刷新，或把下面的错误发给开发者：</p>
+        <pre style="font-size:11px;color:#5a4046;background:#fff7fa;padding:8px;border-radius:8px;overflow:auto;max-height:200px;">${escapeHTML(msg)}</pre>
+      </div>
+    `;
+  }
+}
+
+// 全局兜底：把所有未捕获错误强制写到页面上，绝不出现"一片空白"
+function __paintGlobalError(label, detail) {
+  try {
+    const el = document.getElementById('entryArea');
+    if (!el) return;
+    const stamp = (window.__errStamp = (window.__errStamp || 0) + 1);
+    if (stamp > 1) return; // 只显示第一条
+    const card = document.createElement('div');
+    card.className = 'role-card';
+    card.style.border = '2px solid #e07a8a';
+    card.innerHTML = '<h2>页面加载出错 (' + label + ')</h2>'
+      + '<p style="font-size:12px;color:#8a4046;margin-bottom:8px;">请按 <b>Ctrl/Cmd + Shift + R</b> 强制刷新：</p>'
+      + '<pre style="font-size:11px;color:#5a4046;background:#fff7fa;padding:8px;border-radius:8px;overflow:auto;max-height:200px;">'
+      + String(detail || 'unknown').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'})[c])
+      + '</pre>';
+    el.appendChild(card);
+  } catch (_) { /* swallow */ }
+}
+window.addEventListener('error', e => __paintGlobalError('error', (e && (e.error && (e.error.stack || e.error.message)) || e.message || 'unknown')));
+window.addEventListener('unhandledrejection', e => __paintGlobalError('promise', (e && e.reason && (e.reason.stack || e.reason.message)) || String(e && e.reason) || 'unknown'));
+
+(async function boot() {
+  try {
+    await loadQuestions();
+    renderEntry();
+    if (storage.get('tacit_role')) initMain();
+  } catch (e) {
+    showBootError(e);
+  }
+})();
+
+// 兜底 3s：如果 entryArea 仍然空白且 mainArea 隐藏，说明 boot 卡住了，
+// 强制把当前页面状态画到 entryArea，给用户一个明确的"加载失败/卡住"提示。
+setTimeout(() => {
+  try {
+    const entry = document.getElementById('entryArea');
+    const main  = document.getElementById('mainArea');
+    if (!entry || !main) return;
+    if (entry.innerHTML.trim()) return; // 已经有内容，正常
+    if (main.style.display !== 'none' && main.children.length > 0) return; // 主区已渲染
+    __paintGlobalError('timeout', '页面启动 3 秒后仍未渲染任何内容。\n可能原因：浏览器扩展拦截 / 内联脚本被禁用 / 网络极慢。\n请尝试：\n1. Ctrl/Cmd + Shift + R 强制刷新\n2. 换一个浏览器（建议 Safari / Chrome 最新版）\n3. 用本地直接打开 file:// 试试');
+  } catch (_) { /* swallow */ }
+}, 3000);
+</script>
+</body>
+</html>
