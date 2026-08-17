@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>答案之书</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            background: #f5f3ef;
+            font-family: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 80px 20px;
+            color: #2c2c2c;
+            line-height: 1.8;
+        }
+
+        .container {
+            max-width: 600px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 60px;
+            padding-bottom: 40px;
+            border-bottom: 1px solid #d4d0c8;
+        }
+
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 400;
+            letter-spacing: 0.3em;
+            margin-bottom: 20px;
+            color: #1a1a1a;
+        }
+
+        .subtitle {
+            font-size: 0.95rem;
+            color: #888;
+            font-weight: 300;
+            letter-spacing: 0.1em;
+        }
+
+        .mode-selector {
+            display: flex;
+            gap: 40px;
+            justify-content: center;
+            margin-bottom: 50px;
+        }
+
+        .mode-btn {
+            padding: 10px 0;
+            font-size: 0.95rem;
+            font-family: inherit;
+            border: none;
+            background: transparent;
+            color: #999;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            letter-spacing: 0.1em;
+        }
+
+        .mode-btn::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            width: 0;
+            height: 1px;
+            background: #2c2c2c;
+            transition: all 0.3s ease;
+            transform: translateX(-50%);
+        }
+
+        .mode-btn:hover {
+            color: #2c2c2c;
+        }
+
+        .mode-btn.active {
+            color: #2c2c2c;
+        }
+
+        .mode-btn.active::after {
+            width: 100%;
+        }
+
+        .controls {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 25px;
+            margin-bottom: 50px;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .controls.show {
+            display: flex;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .input-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .number-input {
+            width: 160px;
+            padding: 12px 15px;
+            font-size: 1rem;
+            font-family: inherit;
+            border: 1px solid #ccc;
+            background: #fff;
+            color: #2c2c2c;
+            text-align: center;
+            outline: none;
+            transition: all 0.3s ease;
+            border-radius: 2px;
+        }
+
+        .number-input:focus {
+            border-color: #2c2c2c;
+        }
+
+        .number-input::placeholder {
+            color: #bbb;
+        }
+
+        .action-btn {
+            padding: 12px 30px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            border: 1px solid #2c2c2c;
+            background: transparent;
+            color: #2c2c2c;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            letter-spacing: 0.1em;
+            border-radius: 2px;
+        }
+
+        .action-btn:hover {
+            background: #2c2c2c;
+            color: #fff;
+        }
+
+        .hint {
+            font-size: 0.9rem;
+            color: #999;
+            font-weight: 300;
+        }
+
+        .result-container {
+            display: none;
+            background: #fff;
+            border: 1px solid #e8e4dc;
+            padding: 50px 40px;
+            text-align: center;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.03);
+            animation: resultAppear 0.6s ease;
+        }
+
+        .result-container.show {
+            display: block;
+        }
+
+        @keyframes resultAppear {
+            from {
+                opacity: 0;
+                transform: translateY(15px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .question-prompt {
+            font-size: 0.9rem;
+            color: #aaa;
+            margin-bottom: 35px;
+            font-weight: 300;
+            letter-spacing: 0.05em;
+        }
+
+        .answer-label {
+            font-size: 0.8rem;
+            color: #bbb;
+            text-transform: uppercase;
+            letter-spacing: 0.3em;
+            margin-bottom: 20px;
+            font-weight: 400;
+        }
+
+        .answer {
+            font-size: 1.8rem;
+            font-weight: 400;
+            margin-bottom: 35px;
+            color: #1a1a1a;
+            line-height: 1.6;
+        }
+
+        .explanation {
+            font-size: 0.95rem;
+            line-height: 2;
+            color: #666;
+            text-align: left;
+            font-weight: 300;
+            border-top: 1px solid #eee;
+            padding-top: 25px;
+            margin-top: 25px;
+        }
+
+        .page-num {
+            display: inline-block;
+            margin-top: 30px;
+            color: #ccc;
+            font-size: 0.85rem;
+            letter-spacing: 0.1em;
+        }
+
+        .reset-btn {
+            margin-top: 30px;
+            padding: 10px 25px;
+            font-size: 0.85rem;
+            font-family: inherit;
+            border: 1px solid #ddd;
+            background: transparent;
+            color: #999;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            letter-spacing: 0.1em;
+            border-radius: 2px;
+        }
+
+        .reset-btn:hover {
+            border-color: #2c2c2c;
+            color: #2c2c2c;
+        }
+
+        .loading {
+            text-align: center;
+            color: #aaa;
+            font-size: 0.9rem;
+            font-weight: 300;
+            letter-spacing: 0.1em;
+        }
+
+        .error-msg {
+            color: #c00;
+            text-align: center;
+            font-size: 0.9rem;
+            padding: 20px;
+        }
+
+        .divider {
+            width: 40px;
+            height: 1px;
+            background: #d4d0c8;
+            margin: 60px auto;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 60px;
+            padding-top: 40px;
+            border-top: 1px solid #d4d0c8;
+        }
+
+        .footer p {
+            font-size: 0.8rem;
+            color: #bbb;
+            font-weight: 300;
+            letter-spacing: 0.05em;
+        }
+
+        @media (max-width: 600px) {
+            body { padding: 50px 20px; }
+            h1 { font-size: 1.6rem; letter-spacing: 0.2em; }
+            .mode-selector { gap: 25px; }
+            .mode-btn { font-size: 0.9rem; }
+            .result-container { padding: 35px 25px; }
+            .answer { font-size: 1.4rem; }
+            .explanation { font-size: 0.9rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>答案之书</h1>
+            <p class="subtitle">闭目凝神，心有所问</p>
+        </header>
+
+        <div class="mode-selector">
+            <button class="mode-btn active" data-mode="random">随机抽取</button>
+            <button class="mode-btn" data-mode="number">输入页码</button>
+        </div>
+
+        <div id="random-controls" class="controls show">
+            <p class="hint">心中默念问题，而后抽取</p>
+            <button class="action-btn" id="random-btn">开始</button>
+        </div>
+
+        <div id="number-controls" class="controls">
+            <div class="input-group">
+                <input type="number" class="number-input" id="page-input" placeholder="1 - 337" min="1" max="337">
+                <button class="action-btn" id="submit-btn">确认</button>
+            </div>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            正在翻阅...
+        </div>
+
+        <div id="error" class="error-msg" style="display: none;"></div>
+
+        <div id="result" class="result-container">
+            <p class="question-prompt">你的问题是...</p>
+            <p class="answer-label">答案</p>
+            <p class="answer" id="answer-text"></p>
+            <p class="explanation" id="explanation-text"></p>
+            <span class="page-num" id="page-num"></span>
+            <button class="reset-btn" id="reset-btn">再来一次</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <footer class="footer">
+            <p>共三百三十七页</p>
+        </footer>
+    </div>
+
+    <script>
+        const answersData = [
+            {"page": 1, "answer": "不", "explanation": "表達了否定的意思。當你在答案之書中得到這個答案時，它可能意味著你所問的問題不適合當前的情境或不符合現實情況。你要重新審視問題，或者考慮其他的選擇和可能性。"},
+            {"page": 2, "answer": "別忽視顯而易見的東西", "explanation": "要關註那些看似明顯但可能被忽略的細節或事實。有時候我們會過於關註復雜的問題，而忽視了眼前最明顯的解決方案。"},
+            {"page": 3, "answer": "這可能會讓你付出代價", "explanation": "當你在做出某個決定或采取某個行動之前，要認真考慮可能的後果。你要對可能的風險和代價有所準備。"},
+            {"page": 4, "answer": "結果可能令人吃驚", "explanation": "你正在進行的事情可能會出現意想不到的結果。這並不一定是壞的結果，但它可能與你的預期有所不同。"},
+            {"page": 5, "answer": "有決心就能成功", "explanation": "當你面臨困難時，這個答案提醒你要堅持下去，不要輕易放棄，決心是成功的關鍵因素之一。"},
+            {"page": 6, "answer": "你的行動會使一切得到改善", "explanation": "你的積極行動將會對你的生活產生積極的影響，你的行動是解決問題和實現目標的關鍵。"},
+            {"page": 7, "answer": "做一次改變", "explanation": "嘗試一些新的事物或方法，以改變當前的狀況。你需要對自己的生活、工作或人際關系進行一些調整。"},
+            {"page": 8, "answer": "照別人告訴你的去做", "explanation": "建議你聽從他人的建議或指示。有時候，聽取他人的意見可以幫助我們拓寬思路，找到更好的解決方案。"},
+            {"page": 9, "answer": "不能保證", "explanation": "你要對未來的不確定性做好準備。它並不是在說你的努力一定會失敗，而是在告訴你要保持謹慎和理性。"},
+            {"page": 10, "answer": "聽一聽他人的建議", "explanation": "可能意味著你需要相信他人的建議和指導，並且按照他們的指示去行動。"},
+            {"page": 11, "answer": "答案可能以另一種形式出現", "explanation": "你所期望的結果可能不會以你預期的方式出現。這可能意味著你需要改變你的思維方式或者行動方式。"},
+            {"page": 12, "answer": "毫無疑問", "explanation": "你應該堅定地相信自己的選擇和決定，不要有任何懷疑或猶豫。"},
+            {"page": 13, "answer": "這樣做會使事情變的有趣", "explanation": "你需要采取一些行動或者做出一些改變，讓事情變得更加有趣和有意義。"},
+            {"page": 14, "answer": "這是肯定的", "explanation": "就是說你要相信自己的能力和判斷力，不要輕易被別人的意見左右。"},
+            {"page": 15, "answer": "你可能會傷害到他人", "explanation": "你需要註意自己的行為和言語，以確保你不會傷害到別人。"},
+            {"page": 16, "answer": "全身心投入將贏得好結果", "explanation": "如果你能夠全神貫註地投入到某項任務或活動中，你將有更大的機會獲得成功和積極的結果。"},
+            {"page": 17, "answer": "那只會浪費錢", "explanation": "你正在考慮做的這件事情可能不會帶來預期的回報或收益。這個答案告訴你要謹慎考慮你的決定。"},
+            {"page": 18, "answer": "采取冒險的態度", "explanation": "在面對未知的情況時，不要害怕嘗試新的事物或方法。冒險並不意味著盲目地行動。"},
+            {"page": 19, "answer": "最好等待", "explanation": "你現在不應該采取行動，而是等待更好的時機或機會。"},
+            {"page": 20, "answer": "本頁前第三個答案", "explanation": "查看答案"},
+            {"page": 21, "answer": "這是肯定的", "explanation": "你所問的問題的答案是肯定的。相信自己的直覺和決定，你所追求的目標是可以實現的。"},
+            {"page": 22, "answer": "那超出了你的控製", "explanation": "你正在面對一些你無法控製的情況或事件。這可能會讓你感到沮喪或無助。"},
+            {"page": 23, "answer": "你可能會惹上麻煩", "explanation": "在未來你可能會遇到一些困難或者麻煩。你需要保持警惕，註意自己的行為和言語。"},
+            {"page": 24, "answer": "你需要采取主動", "explanation": "你需要積極主動地去追求你想要的東西，而不是等待機會的到來。"},
+            {"page": 25, "answer": "似乎沒問題", "explanation": "事情看起來很順利，但也不能掉以輕心。"},
+            {"page": 26, "answer": "肯定", "explanation": "你的問題得到了一個積極的回答。它表示你的想法或行動是正確的。"},
+            {"page": 27, "answer": "不要在意", "explanation": "簡潔答案，在面對一些事情時，不要過分糾結或擔心。"},
+            {"page": 28, "answer": "盡早做好它", "explanation": "如果你有一個任務或者目標，你應該盡快開始行動，不要拖延。"},
+            {"page": 29, "answer": "你終會發現你想知道的一切", "explanation": "你需要堅持不懈地追求知識和真相，因為你最終會找到你想要的答案。"},
+            {"page": 30, "answer": "除非你獨自一人", "explanation": "你需要獨處，以便思考自己的問題和找到解決方案。"},
+            {"page": 31, "answer": "是，但不強求", "explanation": "你所希望的事情會發生，但你不應該過度努力或強迫它發生。"},
+            {"page": 32, "answer": "你需要去適應", "explanation": "你需要適應新的環境或情況。你需要改變自己的想法或行為，以適應新的情況。"},
+            {"page": 33, "answer": "明天再來試試", "explanation": "在告訴你，不要因為一次的失敗或者不如意而放棄，明天可以繼續嘗試。"},
+            {"page": 34, "answer": "以更放松的態度去面對", "explanation": "你需要放下一些壓力和焦慮，以一種更輕松、更積極的心態去面對問題。"},
+            {"page": 35, "answer": "你需要考慮其他辦法", "explanation": "當前的方法可能不是最好的解決方案，需要尋找其他途徑來解決問題。"},
+            {"page": 36, "answer": "在習慣中接受一些改變", "explanation": "你需要在保持自己習慣的同時，也要願意接受一些新的變化和挑戰。"},
+            {"page": 37, "answer": "要知道選擇太多和太少一樣很難", "explanation": "有時候我們會面臨很多選擇，而這些選擇可能會讓我們感到困惑和不知所措。"},
+            {"page": 38, "answer": "別浪費時間了", "explanation": "你正在做一些沒有意義或沒有價值的事情，或者你正在花費時間在一些不會帶來積極結果的事情上。"},
+            {"page": 39, "answer": "是", "explanation": "這個答案很簡單明了，它表示你所問的問題的答案是肯定的。"},
+            {"page": 40, "answer": "花更多時間來決定", "explanation": "你需要認真考慮你的選擇，並在做出決定之前仔細權衡利弊。"},
+            {"page": 41, "answer": "當然", "explanation": "你的問題是肯定的，你所期望的事情會發生。"},
+            {"page": 42, "answer": "靈活應對", "explanation": "在面對問題時，你需要保持靈活性和適應性，不要過於固執和死板。"},
+            {"page": 43, "answer": "似乎已成事實", "explanation": "這句話意味著事情已經發生了，而且看起來無法改變。"},
+            {"page": 44, "answer": "看開一點", "explanation": "你需要以一種更寬容、更開放的心態去看待問題。"},
+            {"page": 45, "answer": "問問你的異性同事", "explanation": "你可以向異性同事尋求幫助或者建議。"},
+            {"page": 46, "answer": "本頁前第三個答案", "explanation": "查看答案"},
+            {"page": 47, "answer": "柳暗花明又一村", "explanation": "是一句中國成語，意思是在看似絕望的情況下，最終會出現新的希望和機會。"},
+            {"page": 48, "answer": "你會後悔的", "explanation": "這意味著你當前的決定或行動可能會在未來導致不良後果或遺憾。"},
+            {"page": 49, "answer": "避免第一個解決方法", "explanation": "你需要再思考一下，不要急於采取第一個解決方案。"},
+            {"page": 50, "answer": "隨他去吧", "explanation": "放下過去的困擾和憂慮，不要讓它們阻礙你前進的步伐。"},
+            {"page": 51, "answer": "不", "explanation": "通常表示你需要對當前的情況持否定態度，或者你需要停止當前的行動。"},
+            {"page": 52, "answer": "過段時間就不那麽重要了", "explanation": "當前困擾你的事情可能在未來會變得不那麽重要或不再對你產生影響。"},
+            {"page": 53, "answer": "拭目以待", "explanation": "你需要保持耐心和信心，等待事情的發展和結果。"},
+            {"page": 54, "answer": "相信你最初的想法", "explanation": "應該相信自己的直覺和判斷力，不要輕易受到外界的幹擾和影響。"},
+            {"page": 55, "answer": "請不要抗拒", "explanation": "不要對當前的情況或機會持抗拒的態度，而是要開放心態去接受。"},
+            {"page": 56, "answer": "這會帶來好運", "explanation": "意味著你所采取的行動或做出的決定可能會帶來積極的結果和好運。"},
+            {"page": 57, "answer": "那一定很棒", "explanation": "你所做的事情或者你的想法是非常好的，並且可能會帶來很好的結果。"},
+            {"page": 58, "answer": "把它記下來", "explanation": "你需要將某個想法、靈感或信息記錄下來，以便更好地理解和處理它。"},
+            {"page": 59, "answer": "不要迫於壓力草率行事", "explanation": "是指在面臨壓力和困難時，不要過於急躁和沖動，而應該冷靜思考，理性分析。"},
+            {"page": 60, "answer": "可能發生小意外", "explanation": "生活中充滿了不確定性，你需要時刻保持警覺並做好準備。"},
+            {"page": 61, "answer": "研究並享受它", "explanation": "意味著你需要深入了解和探索某個問題或領域，並從中獲得樂趣和滿足感。"},
+            {"page": 62, "answer": "這具有重要意義", "explanation": "你正在做的事情或你所面臨的情況非常重要，可能會對你的未來產生重大影響。"},
+            {"page": 63, "answer": "防備意外發生", "explanation": "要保持警覺並做好準備，以應對可能出現的意外情況或不可預見的事件。"},
+            {"page": 64, "answer": "一切將依賴於你的選擇", "explanation": "意味著你有自主選擇權，你可以選擇不同的道路和方法來實現你的目標。"},
+            {"page": 65, "answer": "轉移註意力", "explanation": "你需要從當前的問題或情境中暫時抽離出來，將註意力轉移到其他事情上。"},
+            {"page": 66, "answer": "離開", "explanation": "你需要暫時離開當前的環境或狀態，以便更好地處理問題或獲得新的視角。"},
+            {"page": 67, "answer": "你需要其他人的幫助", "explanation": "你需要其他人的幫助，意味著你不能獨自解決問題。"},
+            {"page": 68, "answer": "本頁前第三個答案", "explanation": "查看答案"},
+            {"page": 69, "answer": "這有些特別", "explanation": "你正在經歷一些不同尋常的事情，可能是好的，也可能是壞的。"},
+            {"page": 70, "answer": "過段時間就不那麽重要了", "explanation": "你現在所關註的問題或情況在未來可能會變得不那麽重要。"},
+            {"page": 71, "answer": "不要猶豫", "explanation": "你需要果斷地采取行動，不要拖延或猶豫不決。"},
+            {"page": 72, "answer": "先完成其他事", "explanation": "意味著當前的事情可能不是最緊急或者最重要的，需要先去處理其他任務。"},
+            {"page": 73, "answer": "給自己一點時間", "explanation": "你需要給自己一些時間來思考和反思。"},
+            {"page": 74, "answer": "現在你就能", "explanation": "你現在已經具備了實現目標所需的能力和資源，只需要采取行動就可以了。"},
+            {"page": 75, "answer": "那不值得糾結", "explanation": "你應該放下過去的困擾和煩惱，不要讓它們影響你的現在和未來。"},
+            {"page": 76, "answer": "那將影響別人對你的看法", "explanation": "你的行為和態度會影響別人對你的看法。"},
+            {"page": 77, "answer": "照別人說的去做", "explanation": "你需要相信他人的建議和指導，並且按照他們的指示去行動。"},
+            {"page": 78, "answer": "轉移你的註意力", "explanation": "你需要暫時放下當前的問題或困難，去關註其他事情。"},
+            {"page": 79, "answer": "你會失望的", "explanation": "這個答案是一個警告或提醒，意味著你可能會面臨一些不如意的情況或結果。"},
+            {"page": 80, "answer": "本頁後第四個答案", "explanation": "84"},
+            {"page": 81, "answer": "最好關註你的工作", "explanation": "你需要更加專註於你的工作，以確保你能夠取得更好的成績。"},
+            {"page": 82, "answer": "形式尚不明朗", "explanation": "當前的情況或局勢還不清楚，存在一些不確定性或模糊性。"},
+            {"page": 83, "answer": "不要抱成見", "explanation": "你需要放下自己的偏見和先入為主的想法，以開放的心態去看待問題。"},
+            {"page": 84, "answer": "你必須現在就行動", "explanation": "你需要立即采取行動，不能再拖延或猶豫。"},
+            {"page": 85, "answer": "那可能很難，但值得", "explanation": "你需要面對一些困難和挑戰，但這些困難和挑戰最終會帶來積極的結果。"},
+            {"page": 86, "answer": "付出就會有回報", "explanation": "只要我們付出努力和汗水，就一定能夠得到相應的回報。"},
+            {"page": 87, "answer": "本頁前第三個答案", "explanation": "查看答案"},
+            {"page": 88, "answer": "對意外要有思想準備", "explanation": "這要保持警覺並做好應對突發情況的準備。"},
+            {"page": 89, "answer": "更細心的去傾聽，你就會知道", "explanation": "在面對問題時，我們需要更加仔細地傾聽自己內心的聲音。"},
+            {"page": 90, "answer": "且行且思", "explanation": "在行動的同時保持思考。這個答案提醒我們在人生的旅程中不僅要勇往直前，還要不斷地反思和總結。"},
+            {"page": 91, "answer": "你有能力以任何方式改善", "explanation": "它告訴你要相信自己的能力和潛力，無論面對什麽情況，都相信自己可以通過努力來改善狀況。"},
+            {"page": 92, "answer": "這是你不會忘記的事物", "explanation": "這個答案暗示著某個經歷或事情對你來說非常重要或具有深刻的意義。"},
+            {"page": 93, "answer": "履行你的義務", "explanation": "你需要認真履行自己的責任和義務。"},
+            {"page": 94, "answer": "快刀斬亂麻", "explanation": "建議你采取果斷的行動來解決復雜或混亂的情況。"},
+            {"page": 95, "answer": "別在這上面下賭註", "explanation": "你應該避免在當前的事情上投入過多的資源或時間。"},
+            {"page": 96, "answer": "也許吧", "explanation": "這個答案是一個模糊而不確定的回答，它給了你一定的可能性和希望。"},
+            {"page": 97, "answer": "專註於你的家庭生活", "explanation": "這個答案強調了家庭生活的重要性。家庭是人們最基本的社會單位。"},
+            {"page": 98, "answer": "絕對不", "explanation": "是一個非常明確的答案，它表示一種非常強烈的否定態度。"},
+            {"page": 99, "answer": "等待", "explanation": "是一種對於未來的期待和耐心的等待。"},
+            {"page": 100, "answer": "別犯傻了", "explanation": "不要做傻事，不要犯愚蠢的錯誤。"},
+            {"page": 101, "answer": "可能吧", "explanation": "這個答案是一種模棱兩可的回答，它表示一種不確定的態度。"},
+            {"page": 102, "answer": "表示懷疑", "explanation": "這個答案是在提醒你要保持批判性思維和審慎的態度。"},
+            {"page": 103, "answer": "意義非凡", "explanation": "是一種積極的答案，它表示某件事情或某個人具有重要的意義和價值。"},
+            {"page": 104, "answer": "那可能非同尋常", "explanation": "這個答案是在提醒你要對某個情境或決定保持開放的心態。"},
+            {"page": 105, "answer": "不可能失敗", "explanation": "這個答案傳遞了積極的信息和信心，它告訴你要相信自己的能力和努力。"},
+            {"page": 106, "answer": "你需要了解更多", "explanation": "提醒你要進一步探索和獲取更多的信息。"},
+            {"page": 107, "answer": "情況很快會有變化", "explanation": "提醒你要做好準備應對即將到來的變化。"},
+            {"page": 108, "answer": "這並不重要", "explanation": "你要放下對某件事情的過度關註或執著。"},
+            {"page": 109, "answer": "本頁後第二個答案", "explanation": "查看答案"},
+            {"page": 110, "answer": "這會帶來好運", "explanation": "意味著你所采取的行動或做出的決定可能會帶來積極的結果和好運。"},
+            {"page": 111, "answer": "順其自然", "explanation": "你要放下過度的控製和焦慮，讓事情自然發展。"},
+            {"page": 112, "answer": "問問你最好的朋友", "explanation": "建議你尋求朋友的意見和建議。"},
+            {"page": 113, "answer": "這時不要再自找麻煩", "explanation": "你要避免給自己帶來更多的困擾或負擔。"},
+            {"page": 114, "answer": "晚一點處理", "explanation": "建議你在面對某個問題或任務時，不要急於立刻采取行動。"},
+            {"page": 115, "answer": "嘗試一種更可能的解決方案", "explanation": "在面對問題時，要保持開放的思維並嘗試不同的方法。"},
+            {"page": 116, "answer": "更樂觀一點", "explanation": "提醒你要避免給自己帶來更多的困難或煩惱。"},
+            {"page": 117, "answer": "本頁前第二個答案", "explanation": "查看答案"},
+            {"page": 118, "answer": "先做重要的事", "explanation": "提醒你要優先處理那些對你來說最重要、最有價值的事情。"},
+            {"page": 119, "answer": "投硬幣來做決定吧", "explanation": "在面臨兩難或不確定的情況時，可以借助隨機的方式來做出決定。"},
+            {"page": 120, "answer": "再試一次吧", "explanation": "不要放棄，要保持堅持和耐心。"},
+            {"page": 121, "answer": "這不可能失敗", "explanation": "你所追求的目標或努力是可行的，並且你具備成功的能力和條件。"},
+            {"page": 122, "answer": "這也取決於另一種情況", "explanation": "在做決策或判斷時，要考慮到其他可能的因素或情境。"},
+            {"page": 123, "answer": "是，但不強求", "explanation": "對某個觀點或決定的認同，但同時也帶有一定的靈活性和不確定性。"},
+            {"page": 124, "answer": "你最終能如願", "explanation": "相信自己的努力和堅持會得到回報。"},
+            {"page": 125, "answer": "可行", "explanation": "這個答案是對某個想法或計劃給予的肯定和支持。"},
+            {"page": 126, "answer": "答案就在你家窗外", "explanation": "這個答案是在提示你要從身邊的環境中尋找答案。"},
+            {"page": 127, "answer": "現在你比以往任何時候都清楚", "explanation": "你在當前的時刻對某個問題或情況有了更清晰的理解。"},
+            {"page": 128, "answer": "只需說聲謝謝", "explanation": "這要感恩和表達感激之情。"},
+            {"page": 129, "answer": "或許，等你再年長些就明白了", "explanation": "這是一個關於時間和經驗的信息。"},
+            {"page": 130, "answer": "或許，這將轟動一時", "explanation": "你正在考慮的事情有可能引起很大的關註和影響。"},
+            {"page": 131, "answer": "放手一博", "explanation": "你要勇敢地去嘗試，不要猶豫和害怕。"},
+            {"page": 132, "answer": "你會後悔的", "explanation": "你當前的決定或行動可能會帶來不良後果。"},
+            {"page": 133, "answer": "事情會朝目標發展", "explanation": "你所努力追求的目標是有可能實現的，事情會朝著你期望的方向發展。"},
+            {"page": 134, "answer": "答案可能會以另一種形式出現", "explanation": "你不要拘泥於眼前的結果或預期，保持開放和靈活心態。"},
+            {"page": 135, "answer": "把它記下來", "explanation": "要將某個重要的想法、信息或靈感記錄下來。"},
+            {"page": 136, "answer": "更細心的去了解，你就知道該怎麽做了", "explanation": "要更加深入地了解某個情況或問題。"},
+            {"page": 137, "answer": "需要做更多的努力", "explanation": "要實現某個目標或解決某個問題，你需要付出更多的努力。"},
+            {"page": 138, "answer": "等待一個更好的機會", "explanation": "不要急於行動，而是等待一個更合適、更有利的機會出現。"},
+            {"page": 139, "answer": "數到 5，再試一次", "explanation": "通過數到 5，你可以給自己一個短暫的停頓，冷靜下來。"},
+            {"page": 140, "answer": "也許會很難，但值得", "explanation": "盡管你面臨的任務或挑戰可能會非常困難，但它是值得你去努力和付出的。"},
+            {"page": 141, "answer": "你不得不妥協", "explanation": "在某些情況下，為了達到一個共同的目標或解決一個問題，你可能需要做出一些妥協。"},
+            {"page": 142, "answer": "很快就能解決", "explanation": "你所面臨的問題或困難可以得到解決，而且這個解決可能會很快到來。"},
+            {"page": 143, "answer": "十分確定", "explanation": "你對某個事情或情況有十足的把握和信心，沒有任何懷疑或不確定的因素。"},
+            {"page": 144, "answer": "本頁前第一個答案", "explanation": "查看答案"},
+            {"page": 145, "answer": "尋求更多的選擇", "explanation": "不要局限於眼前的選擇，而是要積極主動地尋找更多的可能性和機會。"},
+            {"page": 146, "answer": "這還不確定", "explanation": "目前還沒有足夠的信息或證據來做出明確的結論或判斷。"},
+            {"page": 147, "answer": "謹慎處理", "explanation": "你在面對某個情況或問題時要保持謹慎和小心。"},
+            {"page": 148, "answer": "全力以赴", "explanation": "全身心地投入到某個目標或任務中，盡你所能去追求成功。"},
+            {"page": 149, "answer": "可以給自己一點時間", "explanation": "你要給自己一些時間和空間，關註自己的需求和感受。"},
+            {"page": 150, "answer": "研究並享受它", "explanation": "你深入了解和探索某個事物或活動，並從中獲得樂趣和滿足感。"},
+            {"page": 151, "answer": "重新考慮你的做法", "explanation": "這是答案之書中的一個建議，意思是讓你審視和反思自己的行為或決策。"},
+            {"page": 152, "answer": "非常正確", "explanation": "這是一個肯定的回答，它表示你的問題或想法得到了認可和支持。"},
+            {"page": 153, "answer": "問問你的母親吧", "explanation": "你在做決定時可以考慮向母親請教或尋求她的意見。"},
+            {"page": 154, "answer": "如果你獨自一人就不要做", "explanation": "你在某些情況下，獨自行動可能不是最佳選擇。"},
+            {"page": 155, "answer": "你長大些就知道了", "explanation": "你目前可能無法理解或解決某個問題，但隨著時間和經驗的增長，你將會有更好的理解。"},
+            {"page": 156, "answer": "無需擔憂", "explanation": "它告訴你不要過度擔心或焦慮，要保持冷靜和理性。"},
+            {"page": 157, "answer": "保持開放的心態", "explanation": "我們要保持靈活、包容和積極的思維方式。"},
+            {"page": 158, "answer": "你會為自己所做的感到高興", "explanation": "你相信自己的選擇，並對自己的努力和付出感到滿意。"},
+            {"page": 159, "answer": "發揮你的想象力", "explanation": "運用想象力來解決問題或創造新的可能性。"},
+            {"page": 160, "answer": "獻出你的一切", "explanation": "全身心地投入到某個目標或事業中，不要保留或猶豫。"},
+            {"page": 161, "answer": "順從你的意願", "explanation": "它鼓勵你跟隨自己內心的想法和願望。"},
+            {"page": 162, "answer": "當然", "explanation": "它表示對某個問題或請求的明確認可。"},
+            {"page": 163, "answer": "先做好自己的事", "explanation": "專註於自己的責任和任務，先把自己的事情處理好。"},
+            {"page": 164, "answer": "不要懷疑", "explanation": "相信自己的判斷和決定，要堅定信心。"},
+            {"page": 165, "answer": "是時候做新打算了", "explanation": "它提醒你要審視當前的情況，並考慮做出新的計劃或決策。"},
+            {"page": 166, "answer": "絕對不", "explanation": "這是一個堅決的否定，在某個情況下不要采取某個行動或選擇。"},
+            {"page": 167, "answer": "不要忽略顯而易見的事", "explanation": "要關註那些看似明顯但可能被忽視的事情。"},
+            {"page": 168, "answer": "省省力氣吧", "explanation": "你要節約精力通過接受這個答案，你可以培養自己的節能意識。"},
+            {"page": 169, "answer": "合作將是關鍵", "explanation": "這個答案是在強調合作的重要性。"},
+            {"page": 170, "answer": "此時不宜", "explanation": "這個答案是在提醒你當前的時機或情況不適合采取某個行動或決策。"},
+            {"page": 171, "answer": "可能會惹上麻煩", "explanation": "這個答案是在提醒你要小心謹慎，避免做出可能帶來不良後果的行為或決策。"},
+            {"page": 172, "answer": "莫等待", "explanation": "不要猶豫或拖延，而是要采取行動。"},
+            {"page": 173, "answer": "本頁後第三個答案", "explanation": "查看答案"},
+            {"page": 174, "answer": "你可能不得不放棄其他的東西", "explanation": "是指你需要為了實現某個目標或完成某項任務而放棄其他的事情或利益。"},
+            {"page": 175, "answer": "遵守規則", "explanation": "這個答案意味著你需要遵守已有的規則或準則。"},
+            {"page": 176, "answer": "相關問題可能會出現", "explanation": "這句話的意思是，在未來可能會出現與當前問題相關的其他問題。"},
+            {"page": 177, "answer": "事情將隨你心意", "explanation": "是一種積極的預測或期望，意味著你的願望或目標將會實現。"},
+            {"page": 178, "answer": "賭一把", "explanation": "是指在面對不確定的情況時，選擇冒險嘗試。"},
+            {"page": 179, "answer": "以後再處理", "explanation": "意味著當前不是解決問題的最佳時機，需要等待更合適的時機或條件。"},
+            {"page": 180, "answer": "結果是樂觀的", "explanation": "意味著所面臨的情況或決策最終會帶來積極的結果。"},
+            {"page": 181, "answer": "期待解決", "explanation": "這個答案意味著你需要保持樂觀的態度，相信問題最終會得到解決。"},
+            {"page": 182, "answer": "靈活應對", "explanation": "是指根據實際情況及時調整策略和行動。"},
+            {"page": 183, "answer": "註意細節", "explanation": "這句話傳達了積極的信息，即你的行動具有積極影響力。"},
+            {"page": 184, "answer": "答案就在公園裏", "explanation": "是一種隱喻，意思是答案可能隱藏在日常生活的某個角落。"},
+            {"page": 185, "answer": "清除你自身的障礙", "explanation": "是指去除那些阻礙你前進的負面情緒、思維模式或行為習慣。"},
+            {"page": 186, "answer": "這是不明智的", "explanation": "這句話是說：你現在所做的決定或行動是不明智的，你需要重新考慮你的選擇。"},
+            {"page": 187, "answer": "將需要大量的努力", "explanation": "意味著實現某個目標或解決某個問題可能需要付出很多的時間、精力和資源。"},
+            {"page": 188, "answer": "不要勉強自己", "explanation": "是指在面對困難或不愉快的情況時，要尊重自己的感受和能力。"},
+            {"page": 189, "answer": "是時候做打算了", "explanation": "是一個非常積極的答案，意味著你需要開始計劃和準備。"},
+            {"page": 190, "answer": "問問你最好的朋友", "explanation": "是指在面臨困惑或需要建議時，向你最信任的朋友請教。"},
+            {"page": 191, "answer": "享受這次體驗", "explanation": "是一種積極的建議，意思是你應該放松心情，盡情享受當下的體驗。"},
+            {"page": 192, "answer": "要付出堅持不懈的努力", "explanation": "意味著實現目標或完成任務需要持續不斷地付出努力。"},
+            {"page": 193, "answer": "那仍舊無法預測", "explanation": "表示即使經過努力，仍然無法準確預測未來的結果或情況。"},
+            {"page": 194, "answer": "結果將會是樂觀的", "explanation": "表示事情的發展或最終結果可能會是積極的、令人滿意的。"},
+            {"page": 195, "answer": "毋庸置疑", "explanation": "表示某件事情非常確定，毫無疑問。"},
+            {"page": 196, "answer": "多花點時間來做決定", "explanation": "是指在面臨重要決策時，不要急於求成。"},
+            {"page": 197, "answer": "只做這一次", "explanation": "是指在特定情境下，建議你只進行一次某個行動或決定。"},
+            {"page": 198, "answer": "這是不明智的", "explanation": "是指某個決策或行為可能存在風險或不良後果。"},
+            {"page": 199, "answer": "做些改變", "explanation": "是指需要采取行動來改變當前的狀況或方式。"},
+            {"page": 200, "answer": "可行", "explanation": "表示這個方案或方法在實際操作中是可行的。"},
+            {"page": 201, "answer": "別這樣", "explanation": "通常表示否定、拒絕或相反的意思。"},
+            {"page": 202, "answer": "先做好其他事", "explanation": "的意思是，讓你先集中精力處理其他事情，把當前的事情放在一邊。"},
+            {"page": 203, "answer": "不要陷入到情緒之中", "explanation": "指在面對問題或困難時，要保持冷靜和理智。"},
+            {"page": 204, "answer": "相信你的直覺", "explanation": "指在面對選擇或決策時，要相信自己的直覺和本能反應。"},
+            {"page": 205, "answer": "采納智者的建議", "explanation": "是指在面臨抉擇時，參考並接受有智慧、經驗豐富的人所提供的意見。"},
+            {"page": 206, "answer": "情況不明了", "explanation": "意味著當前的局勢或情況不清晰，存在一些不確定或模糊的因素。"},
+            {"page": 207, "answer": "等待轉機", "explanation": "意味著在困境中突然出現了新的希望或轉機。"},
+            {"page": 208, "answer": "再思考一下", "explanation": "意味著當前的情況需要你思考並製定未來的計劃或決策。"},
+            {"page": 209, "answer": "你不得不妥協", "explanation": "意味著在某種情況下，你可能需要在堅持自己的立場和滿足他人的需求之間做出權衡和讓步。"},
+            {"page": 210, "answer": "再試試", "explanation": "意味著當前可能沒有得到期望的結果，但不要灰心。"},
+            {"page": 211, "answer": "列出否定的理由", "explanation": "是指在做決策或判斷時，將可能的反對意見或不利因素列出來。"},
+            {"page": 212, "answer": "這並不重要", "explanation": "意味著當前所關註的事情可能沒有那麽關鍵。"},
+            {"page": 213, "answer": "此時不宜", "explanation": "表示現在不是做某件事情的合適時機。"},
+            {"page": 214, "answer": "專註於你的家庭生活", "explanation": "是指將註意力和精力集中在家庭方面。"},
+            {"page": 215, "answer": "要有耐心", "explanation": "是指在面對困難或等待結果時，保持冷靜和堅持。"},
+            {"page": 216, "answer": "尋求更多選擇", "explanation": "是指在做決策時，不要局限於眼前的選項，要積極探索其他可能的方案。"},
+            {"page": 217, "answer": "一笑置之", "explanation": "是指對某些事情或言論不以為意，以輕松、寬容的態度對待。"},
+            {"page": 218, "answer": "繼續", "explanation": "通常表示在之前的基礎上保持或推進當前的行動、狀態或進程。"},
+            {"page": 219, "answer": "隨機應變", "explanation": "是指在面對復雜或不確定的情況時，你需要保持靈活。"},
+            {"page": 220, "answer": "別浪費時間了", "explanation": "這句話是在提醒你要珍惜時間，把時間用在更有意義和價值的事情上。"},
+            {"page": 221, "answer": "別忘記享受樂趣", "explanation": "是提醒人們在忙碌的生活中，不要忘記停下來放松身心。"},
+            {"page": 222, "answer": "是在浪費金錢", "explanation": "這句話的意思是：你所考慮的事情或物品不值得投資。"},
+            {"page": 223, "answer": "重要的優先", "explanation": "是指在面對多個任務或選擇時，需要將重要的事情放在首位。"},
+            {"page": 224, "answer": "事情會朝目標發展", "explanation": "表示所期望的結果或目標有可能實現。"},
+            {"page": 225, "answer": "為了做出最好的決定，務必保持冷靜", "explanation": "是指在面臨重要決策時，情緒可能會影響判斷。"},
+            {"page": 226, "answer": "嘗試一個更沒把握的方法", "explanation": "是指在面對問題時，勇於嘗試一些看似不太可能成功的方法。"},
+            {"page": 227, "answer": "清除內心的障礙", "explanation": "是指去除那些阻礙你前進的負面思維、情緒和行為習慣。"},
+            {"page": 228, "answer": "那可能已成事實", "explanation": "是一種不確定的說法，它暗示著某件事情可能已經發生或成為現實。"},
+            {"page": 229, "answer": "最好等待", "explanation": "可以理解為在當前情況下，不應急於采取行動，而是應該等待更好的時機。"},
+            {"page": 230, "answer": "是", "explanation": "是一種肯定、確認的表達。"},
+            {"page": 231, "answer": "馬上行動", "explanation": "立即采取行動，不要拖延或猶豫。"},
+            {"page": 232, "answer": "不要妄下賭註", "explanation": "是指在做決定或采取行動之前，要慎重考慮。"},
+            {"page": 233, "answer": "接受一些改變", "explanation": "意味著要敞開胸懐，擁抱生活中的變化和不確定性。"},
+            {"page": 234, "answer": "本頁後第三個答案", "explanation": "查看答案"},
+            {"page": 235, "answer": "那可能已無法改變", "explanation": "表示事情已經發展到了一個不可逆轉的階段。"},
+            {"page": 236, "answer": "相信你的直覺", "explanation": "是指在面臨選擇或決策時，要相信自己的直覺和內心感受。"},
+            {"page": 237, "answer": "一些援助能確保你成功", "explanation": "表示在實現目標的過程中，獲得他人的幫助或支持是非常重要的。"},
+            {"page": 238, "answer": "這也取決於另一種情況", "explanation": "意味著答案不是絕對的，需要考慮其他因素或情況。"},
+            {"page": 239, "answer": "你肯定會獲得支持", "explanation": "是一種積極的預測或鼓勵，表示你在某個情境中將會得到他人的幫助、支持或認可。"},
+            {"page": 240, "answer": "如你所願", "explanation": "是一種肯定和滿足的表達，意味著你所期望的事情將會實現或得到滿足。"},
+            {"page": 241, "answer": "當局者迷", "explanation": "是指當一個人身處局中時，往往難以看清全局。"},
+            {"page": 242, "answer": "無論你怎麽做，結果依舊", "explanation": "是指無論你采取什麽行動或決策，最終的結果可能仍然保持不變。"},
+            {"page": 243, "answer": "相信你最初的想法", "explanation": "是指要堅持自己的直覺和判斷力，不要被外界幹擾或他人的意見所左右。"},
+            {"page": 244, "answer": "你需要去適應", "explanation": "是指在面對生活中的變化和挑戰時，我們需要積極調整自己的態度和行為。"},
+            {"page": 245, "answer": "先主後次", "explanation": "是指在面對問題時，應該優先考慮主要問題，然後再考慮次要問題。"},
+            {"page": 246, "answer": "盡早行動", "explanation": "是指在面對問題或機會時，不要拖延，要及時采取行動。"},
+            {"page": 247, "answer": "有可能會傷害到他人", "explanation": "是一種警告或提醒，意味著我們的某些行為或決定可能會對他人造成傷害。"},
+            {"page": 248, "answer": "你現在比任何時候都清楚", "explanation": "這句話意味著你對某件事情的理解或認識比以往更加深刻、清晰。"},
+            {"page": 249, "answer": "極可能發生變故", "explanation": "意味著事情可能會出現意外的轉折或變化。"},
+            {"page": 250, "answer": "毫無疑問", "explanation": "意味著你對自己的決定或行動充滿信心。"},
+            {"page": 251, "answer": "事情會朝目標發展", "explanation": "是一種肯定和鼓勵的回答，它意味著你正在朝著正確的方向前進。"},
+            {"page": 252, "answer": "本頁後第一個答案", "explanation": "查看答案"},
+            {"page": 253, "answer": "帶著好奇去探索", "explanation": "是指在面對未知事物時，保持開放的心態，充滿好奇心地去探索和發現。"},
+            {"page": 254, "answer": "做一次改變", "explanation": "這句話是在告訴你，有時候我們需要改變自己的思維方式、行為習慣或生活方式。"},
+            {"page": 255, "answer": "列出那樣做的理由", "explanation": "當你面臨某個問題或決策時，你需要列出支持你這樣做的理由。"},
+            {"page": 256, "answer": "馬上停下來", "explanation": "是一種建議，意思是你需要立即停止當前的行動或思維方式。"},
+            {"page": 257, "answer": "這不是很確定", "explanation": "這句話意味著事情可能存在不確定性，可能有多種結果。"},
+            {"page": 258, "answer": "不用擔心", "explanation": "是一句安慰的話，意思是你不需要過於擔心或憂慮。"},
+            {"page": 259, "answer": "先做好自己的事", "explanation": "意思是在面對困難和挑戰時，應該先專註於解決自己的問題。"},
+            {"page": 260, "answer": "情況很快就會有變化", "explanation": "意味著事情將會發生轉變，可能是好的變化，也可能是壞的變化。"},
+            {"page": 261, "answer": "不要告訴別人", "explanation": "是一個非常神秘的答案，意味著你需要保守秘密。"},
+            {"page": 262, "answer": "你需要其他人的幫助", "explanation": "在實現目標的過程中，你可能會遇到一些困難和挑戰，你需要與他人合作。"},
+            {"page": 263, "answer": "那將是一件樂事", "explanation": "表示你的願望會實現，而且會帶來快樂和滿足感。"},
+            {"page": 264, "answer": "要知道選擇太多或太少都很難", "explanation": "是指在做出決策時，需要權衡利弊，根據自身情況做出選擇。"},
+            {"page": 265, "answer": "現在你就行", "explanation": "你現在就可以做這件事，不需要等待或猶豫。"},
+            {"page": 266, "answer": "那仍然無法預測", "explanation": "意味著即使你做了很多準備和努力，未來仍然充滿了不確定性和變數。"},
+            {"page": 267, "answer": "列出理由", "explanation": "是一個建議，意思是你需要清楚地了解你自己的想法和目標。"},
+            {"page": 268, "answer": "不要迫於壓力草率行事", "explanation": "是一個警告，它提醒人們在做決策時要冷靜、理性。"},
+            {"page": 269, "answer": "你需要采取行動", "explanation": "為了實現目標，必須采取積極的行動。"},
+            {"page": 270, "answer": "不要等待", "explanation": "這句話意味著你應該立即采取行動，而不是等待時機或條件。"},
+            {"page": 271, "answer": "履行你的義務", "explanation": "是指承擔起你應盡的責任和義務，認真做好自己分內的事情。"},
+            {"page": 272, "answer": "你能以任何方式改善現狀", "explanation": "無論當前的狀況如何，你都有能力通過各種方式來改善它。"},
+            {"page": 273, "answer": "為了做出最好的選擇，請保持冷靜", "explanation": "這句話提醒我們在面對重要決策時，要保持頭腦清醒和冷靜。"},
+            {"page": 274, "answer": "你會為此感到高興", "explanation": "是一個積極的預測，它暗示你當前的選擇或決定將會帶來愉悅和滿足的結果。"},
+            {"page": 275, "answer": "放棄之前的想法", "explanation": "意味著你需要重新審視你之前的計劃或決策，並考慮是否需要做出調整或改變。"},
+            {"page": 276, "answer": "順從你的意願", "explanation": "意味著要尊重自己的內心想法和感受，勇敢地追求自己真正想要的東西。"},
+            {"page": 277, "answer": "你不會忘記這些", "explanation": "表示這些事情或經驗對你來說非常重要或有意義。"},
+            {"page": 278, "answer": "不要在乎", "explanation": "這句話的意思是要我們學會放下，不要過分在意某些事情。"},
+            {"page": 279, "answer": "一切援助有利於你成功", "explanation": "這句話傳達了一個積極的信息，即接受他人的幫助和支持是實現成功的重要因素。"},
+            {"page": 280, "answer": "謹慎對待", "explanation": "這句話意味著在面對某個情況或決策時，要保持冷靜、理性和謹慎。"},
+            {"page": 281, "answer": "放棄你現在的想法", "explanation": "這句話的意思是，放下當前的固有觀念或思維模式，嘗試從不同的角度去思考問題。"},
+            {"page": 282, "answer": "有理由保持樂觀", "explanation": "這句話是在鼓勵人們要看到積極的一面，即使面臨困難或挑戰，也應該保持樂觀的態度。"},
+            {"page": 283, "answer": "帶著好奇去探索", "explanation": "這句話鼓勵人們保持好奇心和探索精神，勇於嘗試和探索新的事物和領域。"},
+            {"page": 284, "answer": "你會發現自己難以妥協", "explanation": "意味著你在面對某些情況或決策時，堅守自己的原則和立場，不願做出讓步或妥協。"},
+            {"page": 285, "answer": "改變不會很快發生", "explanation": "意味著改變需要時間和努力，不能期望一蹴而就。"},
+            {"page": 286, "answer": "有些障礙需要克服", "explanation": "意味著在實現目標或完成任務的過程中，可能會遇到一些困難或阻礙。"},
+            {"page": 287, "answer": "耐心點", "explanation": "這句話是在提醒人們要保持冷靜和沈著，不要急於求成或魯莽行事。"},
+            {"page": 288, "answer": "果斷放棄", "explanation": "意味著在面對困難或不可能實現的目標時，要有勇氣和決斷力放棄。"},
+            {"page": 289, "answer": "最好把心思放在工作上", "explanation": "這句話的意思是建議人們集中精力和註意力在工作上，避免分心或被其他事情幹擾。"},
+            {"page": 290, "answer": "要做就做好，否則就不要去做", "explanation": "這句話的意思是，在決定做一件事情之前，要認真思考並做好充分的準備。"},
+            {"page": 291, "answer": "深表懷疑", "explanation": "表示對某件事情或某種說法持有極大的懷疑和不信任態度。"},
+            {"page": 292, "answer": "最好的解決方法可能不太明顯", "explanation": "這句話提醒我們，在面對問題時，不要急於尋找顯而易見的答案。"},
+            {"page": 293, "answer": "已超出你的控製", "explanation": "意味著當前的情況或事件已經超出了你的能力範圍或掌控能力。"},
+            {"page": 294, "answer": "你已然發現自己無法妥協", "explanation": "這句話意味著你已經認識到在某個情境或決策中，你無法接受或容忍低於你的期望。"},
+            {"page": 295, "answer": "看看會發生什麽", "explanation": "是一種鼓勵人們保持開放心態、勇敢嘗試新事物的態度。"},
+            {"page": 296, "answer": "當然", "explanation": "通常用於表示肯定、確認或同意的意思。"},
+            {"page": 297, "answer": "你需要更多信息", "explanation": "意味著當前的信息可能不夠完整或不夠準確，需要進一步探索、研究。"},
+            {"page": 298, "answer": "別忘記享受樂趣", "explanation": "是在提醒人們在忙碌的生活中要記得放松自己，尋找並享受快樂。"},
+            {"page": 299, "answer": "開闊視野", "explanation": "意味著要超越眼前的局限，拓展自己的認知和理解範圍。"},
+            {"page": 300, "answer": "註意細節", "explanation": "是指在處理問題或執行任務時要關註細節，認真對待每一個環節。"},
+            {"page": 301, "answer": "看的更清楚些", "explanation": "意味著需要更加仔細地觀察或思考當前的情況。"},
+            {"page": 302, "answer": "結果可能會令人震驚", "explanation": "意味著答案可能超出預期，帶來意想不到的結果。"},
+            {"page": 303, "answer": "節省你的精力吧", "explanation": "這句話的意思是，讓你把精力集中在更重要的事情上。"},
+            {"page": 304, "answer": "管他呢", "explanation": "是一種灑脫、不在意的態度，表示放下顧慮，不再擔心或糾結於某件事情。"},
+            {"page": 305, "answer": "發揮你的想象力", "explanation": "這句話是在鼓勵人們充分運用自己的創造力和想象力。"},
+            {"page": 306, "answer": "那將引起一些紛爭", "explanation": "意味著某個決定或行動可能會導致沖突、爭議或不和諧的情況發生。"},
+            {"page": 307, "answer": "相關問題可能會浮出水面", "explanation": "意味著隨著時間的推移，與當前問題相關的其他問題或細節可能會顯露出來。"},
+            {"page": 308, "answer": "改變將不會很快發生", "explanation": "意味著事情的變化可能需要時間，不要期望立竿見影。"},
+            {"page": 309, "answer": "值得付出努力", "explanation": "表示某個目標或夢想是有價值的，值得我們去為之奮鬥和付出。"},
+            {"page": 310, "answer": "似乎已成事實", "explanation": "表示某件事情看起來已經成為了不可改變的事實，但這並不一定是絕對的。"},
+            {"page": 311, "answer": "負起責任來", "explanation": "是指要承擔起自己的責任和義務，認真對待自己的行為和決策。"},
+            {"page": 312, "answer": "你終會搞清楚你想知道的一切", "explanation": "這句話的意思是鼓勵你堅持追求知識和真理，相信自己最終能夠理解並獲得你想要知道的一切。"},
+            {"page": 313, "answer": "不值得一爭", "explanation": "意味著某個事物或情況不值得去爭鬥或爭取。"},
+            {"page": 314, "answer": "遵守規則", "explanation": "是指遵守既定的規則、規定或準則。"},
+            {"page": 315, "answer": "你肯定會獲得支持", "explanation": "這句話傳達了一種積極的信息，即你的想法、決定或行動將會得到他人的認可和支持。"},
+            {"page": 316, "answer": "向別人傾訴", "explanation": "的意思是將內心的想法、感受或困擾與他人分享。"},
+            {"page": 317, "answer": "看來還行", "explanation": "是一種比較中性的評價，表示對某事物的初步判斷或預期。"},
+            {"page": 318, "answer": "等待一個更好的提議", "explanation": "意味著在做決定之前，先保持耐心，不要急於行動。"},
+            {"page": 319, "answer": "可能會惹上麻煩", "explanation": "意味著某種行為或決策可能會帶來不愉快的後果或風險。"},
+            {"page": 320, "answer": "你可能會遭遇反對", "explanation": "這句話意味著在你追求某個目標或做出某個決定的過程中，可能會遇到他人的反對或阻力。"},
+            {"page": 321, "answer": "這會是一件樂事", "explanation": "表示某個行動或決定將會帶來愉悅和享受。"},
+            {"page": 322, "answer": "告訴某人那對你意味著什麽", "explanation": "這句話的意思是讓你向他人表達某件事情對你的重要性或意義。"},
+            {"page": 323, "answer": "一切都取決於你的選擇", "explanation": "這句話強調了個人在決策和塑造自己的生活方面的重要性。"},
+            {"page": 324, "answer": "把這看作一個時機", "explanation": "意味著將當前的情況或機會看作是一個可以利用的時刻。"},
+            {"page": 325, "answer": "", "explanation": ""},
+            {"page": 326, "answer": "你一定得這麽做", "explanation": "是非常肯定和堅決的回答，它意味著在某種情況下，你必須采取特定的行動或做出決定。"},
+            {"page": 327, "answer": "享受這個過程", "explanation": "是一種積極的心態，它鼓勵人們專註於當前的體驗，而不是僅僅關註結果。"},
+            {"page": 328, "answer": "不識廬山真面目，只緣身在此山中", "explanation": "這句話意味著我們有時候因為身處某個情境中而無法看清事情的真相或全貌。"},
+            {"page": 329, "answer": "不要勉強自己", "explanation": "是一句勸慰的話，意思是要尊重自己的感受和能力。"},
+            {"page": 330, "answer": "等待", "explanation": "意味著需要保持耐心，不要急於求成。"},
+            {"page": 331, "answer": "本頁前第三個答案", "explanation": "查看答案"},
+            {"page": 332, "answer": "那一定很棒", "explanation": "是一種積極、樂觀的表達，它表示對某件事情或情境的期待和肯定。"},
+            {"page": 333, "answer": "你可能不得不放棄其他一些東西", "explanation": "這句話的意思是，在追求某個目標或做出某個選擇時，可能需要放棄其他一些東西。"},
+            {"page": 334, "answer": "是時候走了", "explanation": "這句話意味著一個階段或情況已經結束，是時候離開或繼續前進了。"},
+            {"page": 335, "answer": "這肯定會使事情變的有趣", "explanation": "這句話傳達了積極和樂觀的態度。"},
+            {"page": 336, "answer": "說出來吧", "explanation": "這句話鼓勵人們要勇敢地表達自己的想法和感受。"},
+            {"page": 337, "answer": "", "explanation": ""}
+        ];
+
+        const modeBtns = document.querySelectorAll('.mode-btn');
+        const randomControls = document.getElementById('random-controls');
+        const numberControls = document.getElementById('number-controls');
+        const randomBtn = document.getElementById('random-btn');
+        const submitBtn = document.getElementById('submit-btn');
+        const pageInput = document.getElementById('page-input');
+        const resultContainer = document.getElementById('result');
+        const answerText = document.getElementById('answer-text');
+        const explanationText = document.getElementById('explanation-text');
+        const pageNum = document.getElementById('page-num');
+        const resetBtn = document.getElementById('reset-btn');
+        const loading = document.getElementById('loading');
+        const errorDiv = document.getElementById('error');
+
+        let currentMode = 'random';
+
+        modeBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const mode = btn.dataset.mode;
+                if (mode === currentMode) return;
+
+                currentMode = mode;
+                modeBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                randomControls.classList.remove('show');
+                numberControls.classList.remove('show');
+                resultContainer.classList.remove('show');
+                errorDiv.style.display = 'none';
+
+                if (mode === 'random') {
+                    randomControls.classList.add('show');
+                } else {
+                    numberControls.classList.add('show');
+                }
+            });
+        });
+
+        function resolveAnswer(page) {
+            const data = answersData.find(a => a.page === page);
+            if (!data) return null;
+
+            if (data.answer.includes('本頁前')) {
+                const match = data.answer.match(/本頁前第(\d+)個答案/);
+                if (match) {
+                    const offset = parseInt(match[1]);
+                    return resolveAnswer(page - offset);
+                }
+            } else if (data.answer.includes('本頁後')) {
+                const match = data.answer.match(/本頁後第(\d+)個答案/);
+                if (match) {
+                    const offset = parseInt(match[1]);
+                    return resolveAnswer(page + offset);
+                }
+            }
+
+            return data;
+        }
+
+        function showAnswer(data) {
+            if (!data || !data.answer) {
+                errorDiv.textContent = '此页暂无答案，请选择其他页码';
+                errorDiv.style.display = 'block';
+                resultContainer.classList.remove('show');
+                return;
+            }
+
+            loading.style.display = 'none';
+            errorDiv.style.display = 'none';
+            answerText.textContent = data.answer;
+            explanationText.textContent = data.explanation;
+            pageNum.textContent = `第 ${data.page} 页`;
+            resultContainer.classList.add('show');
+        }
+
+        randomBtn.addEventListener('click', () => {
+            loading.style.display = 'block';
+            resultContainer.classList.remove('show');
+            errorDiv.style.display = 'none';
+
+            setTimeout(() => {
+                let randomPage;
+                do {
+                    randomPage = Math.floor(Math.random() * 337) + 1;
+                } while (randomPage === 325 || randomPage === 337);
+
+                const data = resolveAnswer(randomPage);
+                showAnswer(data);
+            }, 600);
+        });
+
+        submitBtn.addEventListener('click', () => {
+            const page = parseInt(pageInput.value);
+
+            if (isNaN(page) || page < 1 || page > 337) {
+                errorDiv.textContent = '请输入 1 至 337 之间的数字';
+                errorDiv.style.display = 'block';
+                resultContainer.classList.remove('show');
+                return;
+            }
+
+            loading.style.display = 'block';
+            resultContainer.classList.remove('show');
+            errorDiv.style.display = 'none';
+
+            setTimeout(() => {
+                const data = resolveAnswer(page);
+                showAnswer(data);
+            }, 400);
+        });
+
+        pageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                submitBtn.click();
+            }
+        });
+
+        resetBtn.addEventListener('click', () => {
+            resultContainer.classList.remove('show');
+            pageInput.value = '';
+            errorDiv.style.display = 'none';
+        });
+    </script>
+</body>
+</html>
