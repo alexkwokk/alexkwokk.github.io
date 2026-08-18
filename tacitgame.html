@@ -1733,46 +1733,49 @@ function renderSetupPanel(role) {
 
 const QUESTIONS_PER_CHALLENGE = 30; // 每次挑战从全部题库中随机挑选的题数
 
-/* ---------- 挑战 session（一轮 = 随机 30 题，去重过滤掉已经回答过的）---------- */
-// 仅用于标记"当前轮正在挑战"的 30 个题号；已猜过的题永不重复。
-const SESSION_KEY = 'tacit_challenge_session';   // { pickedIds:[1,2,3...], activeIndex:0 }
+/* ---------- 挑战 session（一轮 = 从对方已答的题中随机抽 ≤30 道，不重复已猜过的）---------- */
+const SESSION_KEY = 'tacit_challenge_session'; // { pickedIds:[...], activeIndex:0 }
 function loadSession() {
   const s = storage.get(SESSION_KEY, null);
-  if (!s || !Array.isArray(s.pickedIds)) {
-    return { pickedIds: [], activeIndex: 0 };
-  }
+  if (!s || !Array.isArray(s.pickedIds)) return { pickedIds: [], activeIndex: 0 };
   if (typeof s.activeIndex !== 'number') s.activeIndex = 0;
   return s;
 }
-function saveSession(s) {
-  storage.set(SESSION_KEY, s);
-}
-// 从"全部题库"中随机抽 n 题；已经回答过的（myGuess 里有记录）永远不会再次出现
-function pickFreshBatch(role, n) {
-  const guess = storage.get(myGuessKey(role), {});
-  const answeredSet = new Set(Object.keys(guess).map(k => Number(k)));
-  const pool = QUESTIONS.filter(q => !answeredSet.has(q.id));
+function saveSession(s) { storage.set(SESSION_KEY, s); }
+
+// 从对方已答的题中，随机抽最多 n 道"未猜过"的题
+// partner: 对方 answers 对象（key 为题号字符串）
+function pickFreshBatchFromPartner(partner, myGuess, n) {
+  if (!partner) return [];
+  const guessSet = new Set(Object.keys(myGuess).map(k => Number(k)));
+  const pool = Object.keys(partner)
+    .map(id => Number(id))
+    .filter(id => !guessSet.has(id) && QUESTIONS.some(q => q.id === id));
   // Fisher-Yates 洗牌
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
   }
-  return pool.slice(0, n).map(q => q.id);
+  return pool.slice(0, n);
 }
-function startNewChallengeSession(role) {
-  const picked = pickFreshBatch(role, QUESTIONS_PER_CHALLENGE);
+
+// 开启新的一轮：从对方已答的题中抽 ≤30 道未猜过的
+// 若对方一道都没答，或已全部猜完，pickedIds 为空（由调用方展示提示）
+function startNewChallengeSession(role, partner) {
+  const myGuess = storage.get(myGuessKey(role), {});
+  const picked = pickFreshBatchFromPartner(partner, myGuess, QUESTIONS_PER_CHALLENGE);
   saveSession({ pickedIds: picked, activeIndex: 0 });
   return loadSession();
 }
-function ensureChallengeSession(role) {
+
+// 确保 session 有效：清理已不存在的题号；本轮答完时自动开下一轮（从最新 partner 数据）
+function ensureChallengeSession(role, partner) {
   let s = loadSession();
-  // 清掉已不存在的题号（题库变动导致）
   s.pickedIds = s.pickedIds.filter(id => QUESTIONS.some(q => q.id === id));
-  const guess = storage.get(myGuessKey(role), {});
-  // 本轮全部都答完了 → 自动开新一轮
-  const allAnswered = s.pickedIds.length > 0 && s.pickedIds.every(id => guess[id]);
+  const myGuess = storage.get(myGuessKey(role), {});
+  const allAnswered = s.pickedIds.length > 0 && s.pickedIds.every(id => !!myGuess[id]);
   if (s.pickedIds.length === 0 || allAnswered) {
-    s = startNewChallengeSession(role);
+    s = startNewChallengeSession(role, partner);
   } else {
     saveSession(s);
   }
@@ -1944,87 +1947,110 @@ function bindQCardEvents(panel, q, storeKey, stored, isChallenge, role) {
   });
 }
 
-/* ---------- Challenge Tab：猜对方的答案（每轮从 500 题中随机抽 30 题）---------- */
+/* ---------- Challenge Tab：猜对方的答案（从对方已答的题中随机抽 ≤30 道，不重复已猜过的）---------- */
 async function resetChallengeAnswers(role) {
   if (!confirm('确定要清空你所有的"猜"吗？\n\n只会清空本地的猜测记录，不会影响对方已答的题目。')) return;
   storage.remove(myGuessKey(role));
   storage.remove(SESSION_KEY);
-  startNewChallengeSession(role);
+  const partner = storage.get('tacit_partner', null);
+  startNewChallengeSession(role, partner);
   activeQid = 0;
   renderChallengePanel(role);
   updateTabProgress();
 }
 
-function buildChallengeTopBar(role, partner, score, doneInRound, roundTotal, totalCovered) {
+function buildChallengeTopBar(role, partner, score, doneInRound, roundTotal, partnerTotal) {
   const partnerName = partnerNameOf(role);
-  const coveredTxt = `${totalCovered} / ${QUESTIONS.length}`;
   if (partner) {
     return `
       <div class="score-bar" id="challengeScoreBar">
-        <span>本轮 ${doneInRound}/${roundTotal} 题 · 累计已挑战 ${coveredTxt} 题 · 对方已就绪</span>
-        <span class="big">${score}<small> 命中</small></span>
+        <span>本轮 ${doneInRound}/${roundTotal} 题 · 对方已答 ${partnerTotal} 题 · 命中 ${score} 题</span>
+        <span class="big">${doneInRound}<small>/${roundTotal}</small></span>
       </div>
     `;
   }
   return `
     <div class="score-bar" id="challengeScoreBar">
-      <span>本轮 ${doneInRound}/${roundTotal} 题 · 累计已挑战 ${coveredTxt} 题</span>
-      <span class="big">${score}<small> 命中</small></span>
+      <span>等待 ${partnerName} 答完题目…</span>
+      <span class="big" style="font-size:16px;color:#b89aa4;">—</span>
     </div>
     <div class="empty-tip" id="challengeWait" style="margin-bottom:14px;">
       ⏳ 等待 ${partnerName} 答完题目。<br>
-      答完会自动同步，你可以先猜着，猜完会自动判分。
+      答完会自动同步，ta 答一道你就可以猜一道。
     </div>
   `;
 }
 
 function renderChallengePanel(role) {
   const panel = document.getElementById('panel-challenge');
-  const stored = storage.get(myGuessKey(role), {});
-  const partner = storage.get('tacit_partner', null);
-  const session = ensureChallengeSession(role);
+  const stored = storage.get(myGuessKey(role), {});       // 我的猜测
+  const partner = storage.get('tacit_partner', null);    // 对方的答案
 
-  // 计算"本轮已答"和"累计已挑战过的题"
+  const partnerTotal = partner ? Object.keys(partner).length : 0;
+
+  // 对方一道都没答 → 直接展示等待态
+  if (!partner || partnerTotal === 0) {
+    panel.innerHTML = buildChallengeTopBar(role, null, 0, 0, 0, 0);
+    panel.innerHTML += `
+      <div class="empty-tip">
+        ⏳ 等待 ${partnerNameOf(role)} 先去「设置答案」Tab 答几道题。<br>
+        ta 每答一道，这里就可能出现一道待猜的题。
+      </div>
+    `;
+    panel.dataset.ready = '0';
+    return;
+  }
+
+  const session = ensureChallengeSession(role, partner);
   const roundTotal = session.pickedIds.length;
+
+  // 已全部猜完（对方有题，但我的 session 里没有未猜的了）
+  if (roundTotal === 0) {
+    const totalGuessed = Object.keys(stored).length;
+    const score = calcChallengeScore(role);
+    panel.innerHTML = buildChallengeTopBar(role, partner, score, roundTotal, roundTotal, partnerTotal);
+    panel.innerHTML += `
+      <div class="empty-tip" style="background:linear-gradient(135deg,#e6f7ee,#d8f0e3);color:#2c5d44;">
+        🎉 太棒了！对方已答的 <b>${partnerTotal}</b> 道题你已经全部猜完啦！<br>
+        共猜对 <b>${score}</b> 道，继续去刷新看看对方有没有新增答案吧 💪
+      </div>
+      <div class="nav-row" style="margin-top:14px;">
+        <button class="nav-btn ghost" id="resetChallengeBtn" style="font-size:13px;color:#8a6a72;border-color:#eee;">清空猜测，重新开始</button>
+      </div>
+    `;
+    const resetBtn = panel.querySelector('#resetChallengeBtn');
+    if (resetBtn) resetBtn.addEventListener('click', () => resetChallengeAnswers(role));
+    return;
+  }
+
+  // 计算本轮进度
   const doneInRound = session.pickedIds.reduce((acc, id) => acc + (stored[id] ? 1 : 0), 0);
   const score = calcChallengeScore(role);
-  // 累计已挑战 = 历史上已经猜过多少道不同的题（去重后就是 myGuess 里有几条记录）
-  const totalCovered = Object.keys(stored).length;
 
-  // 把 activeQid 锁定到本轮题池对应的位置（0..roundTotal-1）
+  // 把 activeQid 锁定在本轮范围内，并自动跳到最早的未答题
   if (typeof activeQid !== 'number' || activeQid < 0 || activeQid >= roundTotal) {
     activeQid = 0;
   }
-  // 如果当前位置的题已答过，自动跳到最早的未答
   const curId = session.pickedIds[activeQid];
   if (curId && stored[curId]) {
     const firstUn = session.pickedIds.findIndex(id => !stored[id]);
     if (firstUn >= 0) activeQid = firstUn;
-  } else {
-    const firstUn = session.pickedIds.findIndex(id => !stored[id]);
-    if (firstUn >= 0 && activeQid > firstUn) activeQid = firstUn;
   }
 
   const currentId = session.pickedIds[activeQid];
   const q = QUESTIONS.find(x => x.id === currentId) || QUESTIONS[0];
   const inRoundIdx = activeQid;
-  const allDoneInRound = doneInRound >= roundTotal && roundTotal > 0;
+  const allDoneInRound = doneInRound >= roundTotal;
 
-  let topHtml = buildChallengeTopBar(role, partner, score, doneInRound, roundTotal, totalCovered);
+  let topHtml = buildChallengeTopBar(role, partner, score, doneInRound, roundTotal, partnerTotal);
+
+  // 全部答完本轮 → 提示可刷新获取更多
   if (allDoneInRound) {
     topHtml += `
       <div class="empty-tip" style="background:linear-gradient(135deg,#fff0f5,#ffe9d6);color:#6a2a36;margin-bottom:12px;">
-        🎉 本轮 30 题已经全部猜完。<br>
-        答对了 <b>${score}</b> 题，点击下方按钮抽下一批吧。
-      </div>
-      <div class="nav-row" style="margin-bottom:14px;">
-        <button class="nav-btn primary" id="nextBatchBtn">抽下一批 30 题</button>
-      </div>
-    `;
-  } else {
-    topHtml += `
-      <div class="nav-row" style="margin-bottom:14px;">
-        <button class="nav-btn ghost" id="redrawBatchBtn" style="font-size:13px;">🎲 重新抽一批（放弃本轮进度）</button>
+        🎉 本轮 <b>${roundTotal}</b> 道题全部猜完！<br>
+        共猜对 <b>${score}</b> 道。<br>
+        对方还有 <b>${partnerTotal - totalGuessed}</b> 道题未挑战，点击「刷新题目」获取下一批。
       </div>
     `;
   }
@@ -2033,7 +2059,7 @@ function renderChallengePanel(role) {
   panel.dataset.ready = '1';
   panel.innerHTML += buildQCard(q, inRoundIdx, stored[q.id], true, role, roundTotal);
 
-  // 已答题 → 直接展示判分结果（正确/错误 + 反馈条），让"上一题"回看时也能看到当时的结果
+  // 已答题 → 展示判分结果
   const userLetter = stored[q.id];
   if (userLetter) {
     const fb = panel.querySelector('#fb');
@@ -2041,11 +2067,7 @@ function renderChallengePanel(role) {
     if (partnerLetter) {
       const isMatch = userLetter === partnerLetter;
       fb.className = `feedback show ${isMatch ? 'correct' : 'wrong'}`;
-      if (isMatch) {
-        fb.textContent = '太棒了！猜对了！';
-      } else {
-        fb.textContent = `不对哦，ta 的答案是 ${partnerLetter}。`;
-      }
+      fb.textContent = isMatch ? '太棒了！猜对了！' : `不对哦，ta 的答案是 ${partnerLetter}。`;
       panel.querySelectorAll('.opt').forEach(o => {
         o.classList.add('locked');
         o.classList.remove('selected');
@@ -2062,40 +2084,57 @@ function renderChallengePanel(role) {
       fb.textContent = '已保存 ✓（等对方答完即可判分）';
       panel.querySelectorAll('.opt').forEach(o => o.classList.add('locked'));
       const userOpt = panel.querySelector(`.opt[data-letter="${userLetter}"]`);
-      if (userOpt) { userOpt.classList.add('selected'); }
+      if (userOpt) userOpt.classList.add('selected');
     }
   }
 
-  // 绑定"抽下一批 / 重新抽"
-  const nextBatchBtn = panel.querySelector('#nextBatchBtn');
-  if (nextBatchBtn) {
-    nextBatchBtn.addEventListener('click', () => {
-      startNewChallengeSession(role);
+  // 绑定"刷新题目"（手动从最新 partner 重新抽一批）
+  if (allDoneInRound) {
+    const refreshBtn = panel.querySelector('#nextBatchBtn') || document.createElement('div');
+    if (!panel.querySelector('#nextBatchBtn')) {
+      const btnRow = document.createElement('div');
+      btnRow.className = 'nav-row';
+      btnRow.style.marginBottom = '14px';
+      btnRow.innerHTML = `<button class="nav-btn primary" id="nextBatchBtn">🔄 刷新题目（抽下一批）</button>`;
+      panel.insertBefore(btnRow, panel.querySelector('.qcard'));
+    }
+    const rb = panel.querySelector('#nextBatchBtn');
+    rb.addEventListener('click', () => {
+      startNewChallengeSession(role, partner);
       activeQid = 0;
       renderChallengePanel(role);
     });
-  }
-  const redrawBtn = panel.querySelector('#redrawBatchBtn');
-  if (redrawBtn) {
-    redrawBtn.addEventListener('click', () => {
+  } else {
+    // 未答完时，显示"重新抽一批"（放弃本轮进度）
+    const redrawBar = document.createElement('div');
+    redrawBar.className = 'nav-row';
+    redrawBar.style.marginBottom = '14px';
+    redrawBar.innerHTML = `
+      <button class="nav-btn ghost" id="redrawBatchBtn" style="font-size:13px;">
+        🎲 重新抽一批（放弃本轮进度）
+      </button>
+    `;
+    panel.insertBefore(redrawBar, panel.querySelector('.qcard'));
+    panel.querySelector('#redrawBatchBtn').addEventListener('click', () => {
       if (!confirm('重新抽一批会放弃本轮的猜测进度，确定吗？')) return;
-      // 清除本轮题号的猜测（这样新一批可以再次抽到这些题）
-      const oldStored = storage.get(myGuessKey(role), {});
-      session.pickedIds.forEach(id => { delete oldStored[id]; });
-      storage.set(myGuessKey(role), oldStored);
-      startNewChallengeSession(role);
+      const old = storage.get(myGuessKey(role), {});
+      session.pickedIds.forEach(id => { delete old[id]; });
+      storage.set(myGuessKey(role), old);
+      startNewChallengeSession(role, partner);
       activeQid = 0;
       renderChallengePanel(role);
       updateTabProgress();
     });
   }
 
-  // 在卡片底部追加"清空并重新答题"入口
+  // 底部：清空所有猜测
   const resetBar = document.createElement('div');
   resetBar.className = 'nav-row';
   resetBar.style.marginTop = '4px';
   resetBar.innerHTML = `
-    <button class="nav-btn ghost" id="resetChallengeBtn" style="font-size:13px;color:#8a6a72;border-color:#eee;">清空所有猜测并重新开始</button>
+    <button class="nav-btn ghost" id="resetChallengeBtn" style="font-size:13px;color:#8a6a72;border-color:#eee;">
+      清空所有猜测并重新开始
+    </button>
   `;
   panel.appendChild(resetBar);
   const resetBtn = panel.querySelector('#resetChallengeBtn');
@@ -2121,12 +2160,11 @@ function updateChallengeScore(role) {
   const guess = storage.get(myGuessKey(role), {});
   const partner = storage.get('tacit_partner', null);
   if (!partner) return;
-  let count = 0;
-  for (const qid in guess) {
-    if (guess[qid] === partner[qid]) count++;
-  }
-  const done = Object.keys(guess).length;
-  bar.querySelector('.big').innerHTML = `${count}/${done}<small> 题</small>`;
+  const session = loadSession();
+  const roundTotal = session.pickedIds.length;
+  const doneInRound = session.pickedIds.reduce((acc, id) => acc + (guess[id] ? 1 : 0), 0);
+  const count = calcChallengeScore(role);
+  bar.querySelector('.big').innerHTML = `${doneInRound}<small>/${roundTotal}</small>`;
 }
 
 /* ---------- 结果面板 ---------- */
