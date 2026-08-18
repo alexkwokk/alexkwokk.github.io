@@ -360,7 +360,7 @@ async function syncNow() {
     }
   }
 
-  // 4) 处理「对方」：写入 tacit_partner 缓存（保持原行为）
+  // 4) 处理「对方」：写入 tacit_partner 缓存
   const partnerKey = partnerRole(role);
   const partnerRow = rows.find(r => r.role === partnerKey);
   const partnerAnswers = partnerRow && partnerRow.answers
@@ -368,17 +368,19 @@ async function syncNow() {
     : null;
 
   if (partnerAnswers && Object.keys(partnerAnswers).length > 0) {
+    // 云端有对方答案 → 更新本地缓存
     storage.set('tacit_partner', partnerAnswers);
     setSyncStatus('online', `${partnerNameOf(role)} 已就绪 ✓`);
   } else {
-    // 拉取不到时**不**清空旧 partner（避免 UI 来回跳）
+    // 云端对方答案为空（对方可能刚清空了自己的答案）
+    // → 此时应清除本地缓存，让 hsq 看到「等待对方答完题目」
+    // 而不是错误地继续显示旧缓存的 211 道题
     const old = storage.get('tacit_partner', null);
     if (old && Object.keys(old).length > 0) {
-      setSyncStatus('online', `${partnerNameOf(role)} 已就绪 ✓（缓存）`);
-    } else {
+      // 有旧缓存但云端已清空 → 清掉
       storage.remove('tacit_partner');
-      setSyncStatus('idle', `等待 ${partnerNameOf(role)} 答完题目…`);
     }
+    setSyncStatus('idle', `等待 ${partnerNameOf(role)} 答完题目…`);
   }
 
   // 5) 刷新 UI（不论上传成功与否，本地缓存的更新都要体现在界面上）
