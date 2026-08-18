@@ -870,16 +870,6 @@ async function fetchPairAnswers() {
   }
 }
 
-/* ---------- 防抖上传自己的答案 ---------- */
-let uploadTimer = null;
-function scheduleUpload() {
-  if (uploadTimer) clearTimeout(uploadTimer);
-  uploadTimer = setTimeout(() => {
-    uploadTimer = null;
-    syncNow();
-  }, 1200);
-}
-
 /* ---------- 诊断：手动跑一遍并把状态打到 console + 弹窗 ---------- */
 async function diagnose() {
   const lines = [];
@@ -1674,28 +1664,78 @@ function renderPanel(name) {
   if (name === 'result')   return renderResultPanel(role);
 }
 
-/* ---------- Setup Tab：设置自己的答案 ---------- */
+/* ---------- Setup session（一轮 = 从未设置答案的题中随机抽 30 道）---------- */
+const SETUP_SESSION_KEY = 'tacit_setup_session';
+const QUESTIONS_PER_SETUP = 30;
+
+function loadSetupSession() {
+  const s = storage.get(SETUP_SESSION_KEY, null);
+  if (!s || !Array.isArray(s.pickedIds)) return { pickedIds: [], activeIndex: 0 };
+  if (typeof s.activeIndex !== 'number') s.activeIndex = 0;
+  return s;
+}
+function saveSetupSession(s) { storage.set(SETUP_SESSION_KEY, s); }
+
+function pickFreshSetupBatch(role, n) {
+  const stored = storage.get(myAnswersKey(role), {});
+  const answeredSet = new Set(Object.keys(stored).map(k => Number(k)));
+  const pool = QUESTIONS
+    .map(q => q.id)
+    .filter(id => !answeredSet.has(id));
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, n);
+}
+
+function startNewSetupSession(role) {
+  const picked = pickFreshSetupBatch(role, QUESTIONS_PER_SETUP);
+  saveSetupSession({ pickedIds: picked, activeIndex: 0 });
+  return loadSetupSession();
+}
+
+function ensureSetupSession(role) {
+  let s = loadSetupSession();
+  s.pickedIds = s.pickedIds.filter(id => QUESTIONS.some(q => q.id === id));
+  if (s.pickedIds.length === 0) {
+    s = startNewSetupSession(role);
+  } else {
+    saveSetupSession(s);
+  }
+  return s;
+}
+
+/* ---------- Setup Tab：设置自己的答案（批量模式）---------- */
 async function resetSetupAnswers(role) {
   if (!confirm('确定要清空本地已设置的答案吗？\n\n清空后下次答题时会自动覆盖云端的旧答案。')) return;
   storage.remove(myAnswersKey(role));
-  // 取消可能挂起的防抖上传
-  if (uploadTimer) { clearTimeout(uploadTimer); uploadTimer = null; }
+  storage.remove(SETUP_SESSION_KEY);
   activeQid = 0;
   renderSetupPanel(role);
   updateTabProgress();
 }
 
+function buildSetupTopBar(doneInBatch, batchTotal, totalDone, totalAll) {
+  return `
+    <div class="score-bar" id="setupScoreBar">
+      <span>本轮 ${doneInBatch}/${batchTotal} 题 · 已设置 ${totalDone}/${totalAll} 题</span>
+      <span class="big">${doneInBatch}<small>/${batchTotal}</small></span>
+    </div>
+  `;
+}
+
 function renderSetupPanel(role) {
   const panel = document.getElementById('panel-setup');
   const stored = storage.get(myAnswersKey(role), {});
-  const total = QUESTIONS.length;
-  const done = Object.keys(stored).length;
+  const totalDone = Object.keys(stored).length;
+  const totalAll = QUESTIONS.length;
 
   // 全部完成 → 显示完成态
-  if (done >= total) {
+  if (totalDone >= totalAll) {
     panel.innerHTML = `
       <div class="empty-tip" style="background:linear-gradient(135deg,#e6f7ee,#d8f0e3);color:#2c5d44;">
-        你已经答完所有 ${done} 道题 ✓<br>
+        你已经答完所有 ${totalDone} 道题 ✓<br>
         答案已自动同步给对方。<br>
         切换到 <b>「挑战对方」</b> Tab，等 ta 也答完就能开始猜了 💪
       </div>
@@ -1708,27 +1748,210 @@ function renderSetupPanel(role) {
     return;
   }
 
-  let idx = 0;
-  for (let i = 0; i < QUESTIONS.length; i++) {
-    if (!stored[QUESTIONS[i].id]) { idx = i; break; }
+  const session = ensureSetupSession(role);
+  const batchTotal = session.pickedIds.length;
+
+  // 题目全部抽完了（说明没有未答的题了）
+  if (batchTotal === 0) {
+    panel.innerHTML = `
+      <div class="empty-tip" style="background:linear-gradient(135deg,#e6f7ee,#d8f0e3);color:#2c5d44;">
+        你已经答完所有 ${totalDone} 道题 ✓<br>
+        切换到 <b>「挑战对方」</b> Tab 继续吧！
+      </div>
+      <div class="nav-row" style="margin-top:18px;">
+        <button class="nav-btn ghost" id="resetSetupBtn">清空并重新设置</button>
+      </div>
+    `;
+    const resetBtn = panel.querySelector('#resetSetupBtn');
+    if (resetBtn) resetBtn.addEventListener('click', () => resetSetupAnswers(role));
+    return;
   }
-  activeQid = idx;
-  const q = QUESTIONS[idx];
 
-  panel.innerHTML = buildQCard(q, idx, stored[q.id], false, role);
+  // 计算本轮进度
+  const doneInBatch = session.pickedIds.reduce((acc, id) => acc + (stored[id] ? 1 : 0), 0);
 
-  // 在卡片底部追加"清空并重新设置"入口
-  const resetBar = document.createElement('div');
-  resetBar.className = 'nav-row';
-  resetBar.style.marginTop = '4px';
-  resetBar.innerHTML = `
+  // 把 activeQid 锁定在本轮范围内；不去自动跳到未答题，
+  // 这样用户可以自由地"上一题"回去修改已答的题
+  if (typeof activeQid !== 'number' || activeQid < 0 || activeQid >= batchTotal) {
+    // 仅在越界时回到最早的未答题；正常范围内保留 activeQid
+    const firstUn = session.pickedIds.findIndex(id => !stored[id]);
+    activeQid = firstUn >= 0 ? firstUn : 0;
+  }
+
+  const currentId = session.pickedIds[activeQid];
+  const q = QUESTIONS.find(x => x.id === currentId) || QUESTIONS[0];
+  const isLast = activeQid === batchTotal - 1;
+  const allDoneInBatch = doneInBatch >= batchTotal;
+
+  panel.innerHTML = buildSetupTopBar(doneInBatch, batchTotal, totalDone, totalAll);
+
+  // 本轮全部答完 → 显示提交按钮
+  if (allDoneInBatch) {
+    panel.innerHTML += `
+      <div class="empty-tip" style="background:linear-gradient(135deg,#e6f7ee,#d8f0e3);color:#2c5d44;margin-bottom:14px;">
+        🎉 本轮 <b>${batchTotal}</b> 道题已全部设置答案！<br>
+        点击下方「提交全部答案」按钮上传到服务器。
+      </div>
+    `;
+  }
+
+  panel.innerHTML += buildSetupQCard(q, activeQid, stored[q.id], batchTotal);
+
+  // 绑定答题选项事件
+  bindSetupCardEvents(panel, q, role, stored);
+
+  // 底部：提交按钮 + 清空入口
+  const bottomBar = document.createElement('div');
+  bottomBar.className = 'nav-row';
+  bottomBar.style.marginTop = '4px';
+  bottomBar.innerHTML = `
     <button class="nav-btn ghost" id="resetSetupBtn" style="font-size:13px;color:#8a6a72;border-color:#eee;">清空并重新设置</button>
+    ${allDoneInBatch ? '<button class="nav-btn primary" id="submitSetupBtn" style="flex:1;">提交全部答案</button>' : ''}
   `;
-  panel.appendChild(resetBar);
+  panel.appendChild(bottomBar);
+
   const resetBtn = panel.querySelector('#resetSetupBtn');
   if (resetBtn) resetBtn.addEventListener('click', () => resetSetupAnswers(role));
 
-  bindQCardEvents(panel, q, myAnswersKey(role), stored, false, role);
+  const submitBtn = panel.querySelector('#submitSetupBtn');
+  if (submitBtn) {
+    submitBtn.addEventListener('click', async () => {
+      submitBtn.disabled = true;
+      submitBtn.textContent = '提交中…';
+      await syncNow();
+      submitBtn.textContent = '已提交 ✓';
+      submitBtn.style.background = '#4caf80';
+      setTimeout(() => {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '提交全部答案';
+        submitBtn.style.background = '';
+        storage.remove(SETUP_SESSION_KEY);
+        renderSetupPanel(role);
+        updateTabProgress();
+      }, 1500);
+    });
+  }
+}
+
+function buildSetupQCard(q, position, selectedLetter, total) {
+  const isLast = position === total - 1;
+  const pct = total > 1 ? ((position) / (total - 1) * 100) : 0;
+  return `
+    <div class="qcard">
+      <div class="qhead">
+        <span class="qidx">第 ${position + 1} / ${total} 题</span>
+        <div class="qprogress-bar"><span style="width:${pct.toFixed(0)}%"></span></div>
+      </div>
+      <div class="qtext">${escapeHTML(q.text)}</div>
+      <div class="options" id="opts">
+        ${q.options.map((opt, i) => `
+          <div class="opt" data-letter="${'ABCD'[i]}" data-opt="${i}">
+            ${escapeHTML(opt)}
+          </div>
+        `).join('')}
+      </div>
+      <div class="feedback" id="fb"></div>
+      <div class="nav-row">
+        <button class="nav-btn ghost" id="prevBtn" ${position === 0 ? 'disabled' : ''}>上一题</button>
+        <button class="nav-btn primary" id="nextBtn">${isLast ? '完成' : '下一题'}</button>
+      </div>
+    </div>
+  `;
+}
+
+function bindSetupCardEvents(panel, q, role, stored) {
+  const optsEl = panel.querySelectorAll('.opt');
+  const selectedLetter = stored[q.id] || null;
+
+  // 高亮已选项
+  if (selectedLetter) {
+    const target = panel.querySelector(`.opt[data-letter="${selectedLetter}"]`);
+    if (target) target.classList.add('selected');
+  }
+
+  optsEl.forEach(el => {
+    el.addEventListener('click', () => {
+      const letter = el.getAttribute('data-letter');
+
+      // 保存答案到本地
+      const cur = storage.get(myAnswersKey(role), {});
+      cur[q.id] = letter;
+      storage.set(myAnswersKey(role), cur);
+
+      // 更新UI
+      optsEl.forEach(o => o.classList.remove('selected'));
+      el.classList.add('selected');
+
+      updateTabProgress();
+
+      // 更新进度条
+      const session = loadSetupSession();
+      const stored2 = storage.get(myAnswersKey(role), {});
+      const doneInBatch = session.pickedIds.reduce((acc, id) => acc + (stored2[id] ? 1 : 0), 0);
+      const bar = document.getElementById('setupScoreBar');
+      if (bar) {
+        bar.querySelector('.big').innerHTML = `${doneInBatch}<small>/${session.pickedIds.length}</small>`;
+      }
+
+      // 检查是否全部答完
+      const allDone = session.pickedIds.every(id => !!stored2[id]);
+      if (allDone) {
+        // 重新渲染底部按钮区域（直接子元素 nav-row，避免误选 qcard 内的导航按钮）
+        const bottomBar = panel.querySelector(':scope > .nav-row:last-child');
+        if (bottomBar && !bottomBar.querySelector('#submitSetupBtn')) {
+          const submitBtn = document.createElement('button');
+          submitBtn.className = 'nav-btn primary';
+          submitBtn.id = 'submitSetupBtn';
+          submitBtn.textContent = '提交全部答案';
+          submitBtn.style.flex = '1';
+          bottomBar.innerHTML = '';
+          const resetBtn2 = document.createElement('button');
+          resetBtn2.className = 'nav-btn ghost';
+          resetBtn2.id = 'resetSetupBtn';
+          resetBtn2.style = 'font-size:13px;color:#8a6a72;border-color:#eee;';
+          resetBtn2.textContent = '清空并重新设置';
+          resetBtn2.addEventListener('click', () => resetSetupAnswers(role));
+          bottomBar.appendChild(resetBtn2);
+          bottomBar.appendChild(submitBtn);
+          submitBtn.addEventListener('click', async () => {
+            submitBtn.disabled = true;
+            submitBtn.textContent = '提交中…';
+            await syncNow();
+            submitBtn.textContent = '已提交 ✓';
+            submitBtn.style.background = '#4caf80';
+            setTimeout(() => {
+              submitBtn.disabled = false;
+              submitBtn.textContent = '提交全部答案';
+              submitBtn.style.background = '';
+              storage.remove(SETUP_SESSION_KEY);
+              renderSetupPanel(role);
+              updateTabProgress();
+            }, 1500);
+          });
+        }
+      }
+    });
+  });
+
+  // 上一题
+  panel.querySelector('#prevBtn').addEventListener('click', () => {
+    const session = loadSetupSession();
+    if (activeQid > 0) {
+      activeQid--;
+      saveSetupSession(session);
+      renderSetupPanel(role);
+    }
+  });
+
+  // 下一题
+  panel.querySelector('#nextBtn').addEventListener('click', () => {
+    const session = loadSetupSession();
+    if (activeQid < session.pickedIds.length - 1) {
+      activeQid++;
+      saveSetupSession(session);
+      renderSetupPanel(role);
+    }
+  });
 }
 
 const QUESTIONS_PER_CHALLENGE = 30; // 每次挑战从全部题库中随机挑选的题数
@@ -1879,16 +2102,9 @@ function bindQCardEvents(panel, q, storeKey, stored, isChallenge, role) {
         }
       }
     }).catch(() => {});
-  } else {
-    // setup 模式：每答一题就防抖上传；如果是答完最后一道（doneCount >= total）则立即同步一次，确保对方尽快看到
-    const doneCount = Object.keys(storage.get(myAnswersKey(role), {})).length;
-    if (doneCount >= QUESTIONS.length) {
-      syncNow();
-    } else {
-      scheduleUpload();
-    }
   }
-});
+  // setup 模式不再每题自动上传，等用户点击提交按钮
+  });
   });
 
   if (stored[q.id] && !isChallenge) {
