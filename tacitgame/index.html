@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#fff8f5">
+<title>默契挑战</title>
+<script>
+  var _hmt = _hmt || [];
+  (function() {
+    var hm = document.createElement("script");
+    hm.src = "https://hm.baidu.com/hm.js?a9520a2ef8c71a50537128be8b216922";
+    var s = document.getElementsByTagName("script")[0];
+    s.parentNode.insertBefore(hm, s);
+  })();
+</script>
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+
+<div class="topbar" id="topbar">
+  <div class="logo">默契挑战</div>
+  <div class="role-box" id="roleBox"></div>
+</div>
+
+<div id="entryArea">
+  <!-- 静态骨架：即使 JS 完全没跑，也至少显示一张卡（避免出现纯空白页面） -->
+  <noscript>
+    <div class="role-card"><h2>需要启用 JavaScript</h2><p>请在浏览器中启用 JavaScript 后刷新本页面。</p></div>
+  </noscript>
+  <div class="role-card" id="entrySkeleton">
+    <h2>默契挑战</h2>
+    <p style="margin-bottom:18px;">正在加载…请稍候。<br>如果长时间停留，请按 <b>Ctrl/Cmd + Shift + R</b> 强制刷新。</p>
+    <div class="role-options" aria-hidden="true">
+      <div class="role-option" style="opacity:.55;cursor:default"><div class="label">ggh</div><div class="hint">A 玩家</div></div>
+      <div class="role-option" style="opacity:.55;cursor:default"><div class="label">hsq</div><div class="hint">B 玩家</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="mainArea" style="display:none;">
+  <div class="sync-bar" id="syncBar">
+    <div class="sync-status-pill">
+      <span class="status-dot" id="syncDot"></span>
+      <span class="status-text" id="syncStatus">未连接</span>
+    </div>
+    <div class="sync-actions">
+      <button id="syncRefreshBtn" class="icon-btn">↻ 刷新</button>
+      <button id="diagnoseBtn" class="icon-btn">🔍 诊断</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="setup">设置答案<span class="progress" id="progSetup"></span></div>
+    <div class="tab" data-tab="challenge">挑战对方<span class="progress" id="progChallenge"></span></div>
+    <div class="tab" data-tab="result">默契结果</div>
+  </div>
+
+  <div class="content">
+    <!-- Tab 1：设置自己的答案 -->
+    <div class="panel active" id="panel-setup"></div>
+
+    <!-- Tab 2：挑战对方 -->
+    <div class="panel" id="panel-challenge"></div>
+
+    <!-- Tab 3：结果 -->
+    <div class="panel" id="panel-result"></div>
+  </div>
+</div>
+
+<a class="home-link" href="../index.html">← 返回首页</a>
+
+<!-- Supabase SDK（同步加载，game.js 启动时会复用 window.supabase）-->
+<script src="./supabase.js"></script>
+<!-- 游戏逻辑 -->
+<script src="./game.js"></script>
+</body>
+</html>
