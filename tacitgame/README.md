@@ -37,8 +37,30 @@ tacitgame/
 - 上传：`upsert({ room_code, role, answers }, { onConflict: 'room_code,role' })`
 - 实时订阅：`postgres_changes` filter `room_code=eq.tacit_default`，对方答案变化时自动刷新本地缓存和 UI。
 - **双向同步**：`syncNow()` 会先 fetch 云端，**把「自己这一方」的云端答案合入本地**（local 已有 key 优先保留），再把合并后的我方答案回传云端。这样手机设了 100 题，电脑打开会自动看到同样的 100 题；任何一端的「设置答案」最终都会在两端汇总。
+- **猜测同步**：挑战模式下，每答一道题都会自动 `uploadGuess(role, guess)` 把「我的猜测」写入云端（`guess` 列）。换设备时，`syncNow()` 也会做一次双向合并，把云端的猜测拉回本地。
 - 同步触发时机：选择身份后、答题提交后、答题判分时、切到「挑战对方 / 结果」Tab、手动点 `↻ 刷新`、收到对方变化的 realtime 推送。
 - 状态条：左下角小灯显示「连接中…/已就绪 ✓/上传失败」等状态；右上角的 `🔍 诊断` 按钮可一键打印 supabase 客户端与远端状态。
+
+### 表结构
+
+```sql
+create table tacit_answers (
+  room_code text not null,
+  role      text not null,
+  answers   jsonb default '{}'::jsonb,
+  guess     jsonb default '{}'::jsonb,
+  primary key (room_code, role)
+);
+```
+
+> 老库若没有 `guess` 列，先在 Supabase SQL Editor 执行一次：
+>
+> ```sql
+> alter table tacit_answers
+>   add column if not exists guess jsonb default '{}'::jsonb;
+> ```
+>
+> 跑完这句之后，「挑战对方」Tab 的猜测记录才会被同步到云端。
 
 ## 本地存储 key
 
@@ -50,6 +72,8 @@ tacitgame/
 | `tacit_partner` | 缓存的对方答案（同步成功后写入） |
 | `tacit_setup_session` | 「设置答案」当前 batch 的题号列表与指针 |
 | `tacit_challenge_session` | 「挑战对方」当前 batch 的题号列表与指针 |
+
+> 云端列 `tacit_answers.guess` 与本地 `tacit_<role>_guess` 一一对应；切设备时通过 `syncNow()` 自动合并。
 
 ## 维护说明
 

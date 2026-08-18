@@ -124,17 +124,83 @@ async function uploadAnswers(role, answers) {
 
 async function fetchPairAnswers() {
   if (!supabaseReady || !supabase || typeof supabase.from !== 'function') return [];
-  try {
-    const { data, error } = await supabase
+  // 第一优先：尝试连 `guess` 列一起读。
+  // 若用户还没跑迁移、guess 列不存在，Postgres 返回的 error 形如
+  // "column tacit_answers.guess does not exist" → 退到老 schema（只读 answers），
+  // 这样在跑 SQL 前 sync 也能继续正常工作（仅挑战记录无法上云）。
+  let res = await supabase
+    .from('tacit_answers')
+    .select('role,answers,guess')
+    .eq('room_code', ROOM_CODE);
+  if (res.error && /guess.*does not exist/i.test(res.error.message || '')) {
+    console.warn('[fetch] guess 列不存在，回退到只读 answers（请执行 sql/migrate_add_guess.sql）');
+    res = await supabase
       .from('tacit_answers')
       .select('role,answers')
       .eq('room_code', ROOM_CODE);
-    if (error) { console.error('[fetch] supabase error:', error); return []; }
-    console.log('[fetch] rows count=' + (data ? data.length : 0), data);
-    return data || [];
+  }
+  if (res.error) { console.error('[fetch] supabase error:', res.error); return []; }
+  const data = res.data || [];
+  // 老库回退路径：rows 里没有 guess 字段，强行补回 {} 让下游逻辑统一
+  data.forEach(r => { if (typeof r.guess === 'undefined') r.guess = null; });
+  console.log('[fetch] rows count=' + data.length, data);
+  return data;
+}
+
+// 上传猜测（挑战记录）到云端
+// 注意：若对方/自己之前没创建过该 row，upsert 也会新建一行带上空的 answers，避免丢失对方已答的题
+// 兼容：guess 列不存在时（用户未跑迁移）直接 no-op，不报错
+async function uploadGuess(role, guess) {
+  if (!supabaseReady || !supabase || typeof supabase.from !== 'function') return { ok: false, error: 'no supabase' };
+  // 探测 guess 列是否真实存在（首次调用时探测一次，结果缓存，全局共用）
+  if (typeof uploadGuess._hasGuessColumn === 'undefined') {
+    const probe = await supabase.from('tacit_answers').select('guess').eq('room_code', ROOM_CODE).limit(1);
+    uploadGuess._hasGuessColumn = !(probe.error && /guess.*does not exist/i.test(probe.error.message || ''));
+    if (!uploadGuess._hasGuessColumn) {
+      console.warn('[uploadGuess] guess 列不存在，跳过上传（请执行 sql/migrate_add_guess.sql）');
+    }
+  }
+  if (!uploadGuess._hasGuessColumn) return { ok: false, error: 'guess column missing' };
+  try {
+    const { data, error } = await supabase
+      .from('tacit_answers')
+      .upsert({ room_code: ROOM_CODE, role, guess },
+              { onConflict: 'room_code,role' })
+      .select();
+    if (error) { console.error('[uploadGuess] supabase error:', error); return { ok: false, error: error.message }; }
+    console.log('[uploadGuess] ok role=' + role, data);
+    return { ok: true };
   } catch (e) {
-    console.error('[fetch] throw:', e);
-    return [];
+    console.error('[uploadGuess] throw:', e);
+    return { ok: false, error: (e && e.message) || 'upload guess failed' };
+  }
+}
+
+// 同时把指定 role 的 answers + guess 一并写空（用于「清空云端」按钮）
+async function clearCloudRow(role, fields) {
+  if (!supabaseReady || !supabase || typeof supabase.from !== 'function') return { ok: false, error: 'no supabase' };
+  try {
+    const row = { room_code: ROOM_CODE, role };
+    if (fields === 'answers' || fields === 'all') row.answers = {};
+    if (fields === 'guess'   || fields === 'all') row.guess = {};
+    // 探测 guess 列是否真实存在；若不存在（用户未跑迁移），则去掉 guess 字段重写
+    if (row.guess) {
+      const probe = await supabase.from('tacit_answers').select('guess').eq('room_code', ROOM_CODE).limit(1);
+      if (probe.error && /guess.*does not exist/i.test(probe.error.message || '')) {
+        console.warn('[clearCloud] guess 列不存在，退到只清 answers');
+        delete row.guess;
+      }
+    }
+    const { data, error } = await supabase
+      .from('tacit_answers')
+      .upsert(row, { onConflict: 'room_code,role' })
+      .select();
+    if (error) { console.error('[clearCloud] supabase error:', error); return { ok: false, error: error.message }; }
+    console.log('[clearCloud] ok role=' + role + ' fields=' + fields, data);
+    return { ok: true };
+  } catch (e) {
+    console.error('[clearCloud] throw:', e);
+    return { ok: false, error: (e && e.message) || 'clear cloud failed' };
   }
 }
 
@@ -268,6 +334,29 @@ async function syncNow() {
     if (!r.ok) {
       // 即便上传失败，也保留已经写回本地的云端合入项；下次再试
       setSyncStatus('err', '上传失败: ' + r.error);
+    }
+  }
+
+  // 3.5) 双向同步「我的猜测」（挑战记录），与 answers 同款合并策略
+  //   - 老 schema 没有 guess 字段时，`r.guess` 为 undefined → 视作 {}
+  //   - 因此即便用户没建 guess 列，sync 也不会把 rows.find 出来的内容清空
+  const myCloudGuess = ((r) => r && r.guess
+    ? (typeof r.guess === 'string' ? safeParse(r.guess) : r.guess)
+    : null)(rows.find(r => r.role === role));
+  const myLocalGuess = storage.get(myGuessKey(role), {});
+  const guessMerged = { ...(myCloudGuess && typeof myCloudGuess === 'object' ? myCloudGuess : {}), ...myLocalGuess };
+  const guessMergedCount = Object.keys(guessMerged).length;
+  const myLocalGuessCount = Object.keys(myLocalGuess).length;
+  if (guessMergedCount !== myLocalGuessCount) {
+    storage.set(myGuessKey(role), guessMerged);
+    storage.remove(SESSION_KEY); // 猜的题池变化，让下一轮重新抽
+    activeQid = 0;
+  }
+  if (guessMergedCount > 0) {
+    const r2 = await uploadGuess(role, guessMerged);
+    if (!r2.ok) {
+      // 失败时不打 err 灯，避免覆盖上面的状态；但记到 console
+      console.warn('[syncNow] uploadGuess failed:', r2.error);
     }
   }
 
@@ -1014,8 +1103,37 @@ async function resetSetupAnswers(role) {
   updateTabProgress();
 }
 
+// 「清空云端我的答案」：先调云端 upsert({ answers: {} })，成功后再清本地。
+// 失败时回滚提示（不破坏本地），让用户重试或断网继续干别的。
+async function clearCloudSetupAnswers(role) {
+  if (!confirm('⚠️ 即将清空云端「我的答案」\n\n· 云端当前角色（' + myNameOf(role) + '）已答的所有题目将被清空\n· 本地的答案也会一起清空\n· 对方题目不会受影响\n\n确定继续？')) return;
+  const setBtn = document.getElementById('clearCloudSetupBtn');
+  if (setBtn) { setBtn.disabled = true; setBtn.textContent = '清空中…'; }
+  try {
+    const r = await clearCloudRow(role, 'answers');
+    if (!r.ok) {
+      alert('清空云端失败：' + r.error + '\n（本地答案未改动，可重试）');
+      if (setBtn) { setBtn.disabled = false; setBtn.textContent = '🗑 清空云端我的答案'; }
+      return;
+    }
+    // 云端清空成功 → 再清本地 + 重置 session
+    storage.remove(myAnswersKey(role));
+    storage.remove(SETUP_SESSION_KEY);
+    activeQid = 0;
+    renderSetupPanel(role);
+    updateTabProgress();
+    setSyncStatus('online', '云端答案已清空 ✓');
+  } catch (e) {
+    alert('清空云端异常：' + (e && e.message));
+    if (setBtn) { setBtn.disabled = false; setBtn.textContent = '🗑 清空云端我的答案'; }
+  }
+}
+
 function buildSetupTopBar(doneInBatch, batchTotal, totalDone, totalAll) {
   return `
+    <div class="topbar-actions" id="setupTopActions">
+      <button class="topbar-btn" id="clearCloudSetupBtn" title="清空云端「我的答案」">🗑 清空云端我的答案</button>
+    </div>
     <div class="score-bar" id="setupScoreBar">
       <span>本轮 ${doneInBatch}/${batchTotal} 题 · 已设置 ${totalDone}/${totalAll} 题</span>
       <span class="big">${doneInBatch}<small>/${batchTotal}</small></span>
@@ -1032,6 +1150,9 @@ function renderSetupPanel(role) {
   // 全部完成 → 显示完成态
   if (totalDone >= totalAll) {
     panel.innerHTML = `
+      <div class="topbar-actions" id="setupTopActions">
+        <button class="topbar-btn" id="clearCloudSetupBtn" title="清空云端「我的答案」">🗑 清空云端我的答案</button>
+      </div>
       <div class="empty-tip" style="background:linear-gradient(135deg,#e6f7ee,#d8f0e3);color:#2c5d44;">
         你已经答完所有 ${totalDone} 道题 ✓<br>
         答案已自动同步给对方。<br>
@@ -1043,6 +1164,8 @@ function renderSetupPanel(role) {
     `;
     const resetBtn = panel.querySelector('#resetSetupBtn');
     if (resetBtn) resetBtn.addEventListener('click', () => resetSetupAnswers(role));
+    const clearCloudBtn = panel.querySelector('#clearCloudSetupBtn');
+    if (clearCloudBtn) clearCloudBtn.addEventListener('click', () => clearCloudSetupAnswers(role));
     return;
   }
 
@@ -1052,6 +1175,9 @@ function renderSetupPanel(role) {
   // 题目全部抽完了（说明没有未答的题了）
   if (batchTotal === 0) {
     panel.innerHTML = `
+      <div class="topbar-actions" id="setupTopActions">
+        <button class="topbar-btn" id="clearCloudSetupBtn" title="清空云端「我的答案」">🗑 清空云端我的答案</button>
+      </div>
       <div class="empty-tip" style="background:linear-gradient(135deg,#e6f7ee,#d8f0e3);color:#2c5d44;">
         你已经答完所有 ${totalDone} 道题 ✓<br>
         切换到 <b>「挑战对方」</b> Tab 继续吧！
@@ -1062,6 +1188,8 @@ function renderSetupPanel(role) {
     `;
     const resetBtn = panel.querySelector('#resetSetupBtn');
     if (resetBtn) resetBtn.addEventListener('click', () => resetSetupAnswers(role));
+    const clearCloudBtn = panel.querySelector('#clearCloudSetupBtn');
+    if (clearCloudBtn) clearCloudBtn.addEventListener('click', () => clearCloudSetupAnswers(role));
     return;
   }
 
@@ -1097,6 +1225,10 @@ function renderSetupPanel(role) {
 
   // 绑定答题选项事件
   bindSetupCardEvents(panel, q, role, stored);
+
+  // 顶部：清空云端我的答案（按钮事件）
+  const clearCloudBtn = panel.querySelector('#clearCloudSetupBtn');
+  if (clearCloudBtn) clearCloudBtn.addEventListener('click', () => clearCloudSetupAnswers(role));
 
   // 底部：只保留清空入口（提交由「完成」按钮承担）
   const bottomBar = document.createElement('div');
@@ -1357,28 +1489,37 @@ function bindQCardEvents(panel, q, storeKey, stored, isChallenge, role) {
       fb.className = 'feedback show';
       fb.textContent = '已保存 ✓（等对方答完即可判分）';
     }
-    // 把"我的猜测"传给云端（其实本地只存真实答案；为保险，答一道就 syncNow 一次拉取对方最新答案）
-    // 注意：这里只拉数据，不重渲染挑战面板，避免覆盖当前题目上的结果展示
-    fetchPairAnswers().then(rows => {
-      const partnerKey = partnerRole(role);
-      const partnerRow = rows.find(r => r.role === partnerKey);
-      const partnerAnswers = partnerRow && partnerRow.answers
-        ? (typeof partnerRow.answers === 'string' ? safeParse(partnerRow.answers) : partnerRow.answers)
-        : null;
-      if (partnerAnswers && Object.keys(partnerAnswers).length > 0) {
-        const before = storage.get('tacit_partner', null);
-        storage.set('tacit_partner', partnerAnswers);
-        const beforeStr = before ? JSON.stringify(before) : '';
-        if (beforeStr !== JSON.stringify(partnerAnswers)) {
-          // 对方答案有变化才提示（不重渲染挑战面板，避免打断当前答题体验）
-          setSyncStatus('online', `${partnerNameOf(role)} 已就绪 ✓`);
-          // 仅在结果 Tab 时刷新结果面板
-          if (typeof currentTab !== 'undefined' && currentTab === 'result') {
-            renderResultPanel(role);
+    // 把"我的猜测"传给云端（盖在云端自己的 guess 字段上；同时再 fetch 一次，让对方最新答案也能即时进来）
+    // 小优化：只在「本轮答完最后一道」时再走一次全量 syncNow，否则只走 guess 上传，
+    // 避免每次答一题都重渲染整个面板
+    if (panel.dataset.allDoneInRound === '1') {
+      // 本轮已收齐 → 走完整 syncNow，覆盖 guess + 重渲染
+      syncNow().catch(() => {});
+    } else {
+      // 仅上传 guess（不重渲染当前题卡）
+      uploadGuess(role, storage.get(myGuessKey(role), {})).catch(() => {});
+      // 再悄悄拉一次对方最新答案（沿用原行为，但不重渲染挑战面板）
+      fetchPairAnswers().then(rows => {
+        const partnerKey = partnerRole(role);
+        const partnerRow = rows.find(r => r.role === partnerKey);
+        const partnerAnswers = partnerRow && partnerRow.answers
+          ? (typeof partnerRow.answers === 'string' ? safeParse(partnerRow.answers) : partnerRow.answers)
+          : null;
+        if (partnerAnswers && Object.keys(partnerAnswers).length > 0) {
+          const before = storage.get('tacit_partner', null);
+          storage.set('tacit_partner', partnerAnswers);
+          const beforeStr = before ? JSON.stringify(before) : '';
+          if (beforeStr !== JSON.stringify(partnerAnswers)) {
+            // 对方答案有变化才提示（不重渲染挑战面板，避免打断当前答题体验）
+            setSyncStatus('online', `${partnerNameOf(role)} 已就绪 ✓`);
+            // 仅在结果 Tab 时刷新结果面板
+            if (typeof currentTab !== 'undefined' && currentTab === 'result') {
+              renderResultPanel(role);
+            }
           }
         }
-      }
-    }).catch(() => {});
+      }).catch(() => {});
+    }
   }
   // setup 模式不再每题自动上传，等用户点击提交按钮
   });
@@ -1452,10 +1593,44 @@ async function resetChallengeAnswers(role) {
   updateTabProgress();
 }
 
+// 「清空云端我的挑战记录」：先调云端 upsert({ guess: {} })，成功后再清本地。
+// 失败时回滚提示（不破坏本地），让用户重试或断网继续干别的。
+async function clearCloudChallengeAnswers(role) {
+  if (!confirm('⚠️ 即将清空云端「我的挑战记录」\n\n· 云端当前角色（' + myNameOf(role) + '）的所有猜测将被清空\n· 本地的猜测也会一起清空\n· 对方已答的题目不会受影响\n\n确定继续？')) return;
+  const setBtn = document.getElementById('clearCloudChallengeBtn');
+  if (setBtn) { setBtn.disabled = true; setBtn.textContent = '清空中…'; }
+  try {
+    const r = await clearCloudRow(role, 'guess');
+    if (!r.ok) {
+      alert('清空云端失败：' + r.error + '\n（本地猜测未改动，可重试）');
+      if (setBtn) { setBtn.disabled = false; setBtn.textContent = '🗑 清空云端我的挑战记录'; }
+      return;
+    }
+    // 云端清空成功 → 再清本地 + 重置 session
+    storage.remove(myGuessKey(role));
+    storage.remove(SESSION_KEY);
+    const partner = storage.get('tacit_partner', null);
+    startNewChallengeSession(role, partner);
+    activeQid = 0;
+    renderChallengePanel(role);
+    updateTabProgress();
+    setSyncStatus('online', '云端挑战记录已清空 ✓');
+  } catch (e) {
+    alert('清空云端异常：' + (e && e.message));
+    if (setBtn) { setBtn.disabled = false; setBtn.textContent = '🗑 清空云端我的挑战记录'; }
+  }
+}
+
 function buildChallengeTopBar(role, partner, score, doneInRound, roundTotal, partnerTotal) {
   const partnerName = partnerNameOf(role);
+  const topActions = `
+    <div class="topbar-actions" id="challengeTopActions">
+      <button class="topbar-btn" id="clearCloudChallengeBtn" title="清空云端「我的挑战记录」">🗑 清空云端我的挑战记录</button>
+    </div>
+  `;
   if (partner) {
     return `
+      ${topActions}
       <div class="score-bar" id="challengeScoreBar">
         <span>本轮 ${doneInRound}/${roundTotal} 题 · 对方已答 ${partnerTotal} 题 · 命中 ${score} 题</span>
         <span class="big">${doneInRound}<small>/${roundTotal}</small></span>
@@ -1463,6 +1638,7 @@ function buildChallengeTopBar(role, partner, score, doneInRound, roundTotal, par
     `;
   }
   return `
+    ${topActions}
     <div class="score-bar" id="challengeScoreBar">
       <span>等待 ${partnerName} 答完题目…</span>
       <span class="big" style="font-size:16px;color:#b89aa4;">—</span>
@@ -1491,6 +1667,8 @@ function renderChallengePanel(role) {
       </div>
     `;
     panel.dataset.ready = '0';
+    const clearCloudBtn = panel.querySelector('#clearCloudChallengeBtn');
+    if (clearCloudBtn) clearCloudBtn.addEventListener('click', () => clearCloudChallengeAnswers(role));
     return;
   }
 
@@ -1513,6 +1691,8 @@ function renderChallengePanel(role) {
     `;
     const resetBtn = panel.querySelector('#resetChallengeBtn');
     if (resetBtn) resetBtn.addEventListener('click', () => resetChallengeAnswers(role));
+    const clearCloudBtn = panel.querySelector('#clearCloudChallengeBtn');
+    if (clearCloudBtn) clearCloudBtn.addEventListener('click', () => clearCloudChallengeAnswers(role));
     return;
   }
 
@@ -1550,6 +1730,7 @@ function renderChallengePanel(role) {
 
   panel.innerHTML = topHtml;
   panel.dataset.ready = '1';
+  panel.dataset.allDoneInRound = allDoneInRound ? '1' : '0';
   panel.innerHTML += buildQCard(q, inRoundIdx, stored[q.id], true, role, roundTotal);
 
   // 已答题 → 展示判分结果
@@ -1632,6 +1813,10 @@ function renderChallengePanel(role) {
   panel.appendChild(resetBar);
   const resetBtn = panel.querySelector('#resetChallengeBtn');
   if (resetBtn) resetBtn.addEventListener('click', () => resetChallengeAnswers(role));
+
+  // 顶部：清空云端我的挑战记录（按钮事件）
+  const clearCloudBtn = panel.querySelector('#clearCloudChallengeBtn');
+  if (clearCloudBtn) clearCloudBtn.addEventListener('click', () => clearCloudChallengeAnswers(role));
 
   bindQCardEvents(panel, q, myGuessKey(role), stored, true, role);
 }
