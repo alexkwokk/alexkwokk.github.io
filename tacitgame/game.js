@@ -150,7 +150,14 @@ async function fetchPairAnswers() {
 // 上传猜测（挑战记录）到云端
 // 注意：若对方/自己之前没创建过该 row，upsert 也会新建一行带上空的 answers，避免丢失对方已答的题
 // 兼容：guess 列不存在时（用户未跑迁移）直接 no-op，不报错
-async function uploadGuess(role, guess) {
+//
+// 【关键】第三个参数 answers 是必传的"合并后的我方 answers"，必须随 upsert 一起发送。
+// 原因：PostgREST 的单对象 upsert 路径是「先尝试 INSERT，命中 ON CONFLICT 再 DO UPDATE」，
+// INSERT 阶段会把 payload 里**未出现的列**填成 NULL（即使原 row 已经有值）。
+// 但本表的 `answers` 列实际是 NOT NULL 约束（旧库迁移/手动建表时容易遗漏），
+// 所以一旦 INSERT 时 answers 缺失 → NULL → 23502 not-null violation → 整个 upsert 失败 → guess 永远空。
+// 调用方必须先做 cloud+local 合并再传入（见 syncNow 与 fallback 兜底逻辑）。
+async function uploadGuess(role, guess, answers) {
   if (!supabaseReady || !supabase || typeof supabase.from !== 'function') return { ok: false, error: 'no supabase' };
   // 探测 guess 列是否真实存在（首次调用时探测一次，结果缓存，全局共用）
   if (typeof uploadGuess._hasGuessColumn === 'undefined') {
@@ -161,14 +168,30 @@ async function uploadGuess(role, guess) {
     }
   }
   if (!uploadGuess._hasGuessColumn) return { ok: false, error: 'guess column missing' };
+  // 兜底：调用方没传 answers 时，自动 fetch 云端 + 合入本地，避免污染 cloud 中比本地更新的答案。
+  // 这种情况大多是「挑战模式答题时随手调一次 uploadGuess」，fetch 一次可接受。
+  if (typeof answers === 'undefined') {
+    let cloudAnswers = {};
+    try {
+      const rows = await fetchPairAnswers();
+      const myRow = rows.find(r => r.role === role);
+      if (myRow && myRow.answers) {
+        cloudAnswers = typeof myRow.answers === 'string' ? safeParse(myRow.answers) || {} : myRow.answers;
+      }
+    } catch (e) {
+      console.warn('[uploadGuess] fallback fetchPairAnswers failed:', e && e.message);
+    }
+    const localAnswers = storage.get(myAnswersKey(role), {});
+    answers = { ...(cloudAnswers && typeof cloudAnswers === 'object' ? cloudAnswers : {}), ...localAnswers };
+  }
   try {
     const { data, error } = await supabase
       .from('tacit_answers')
-      .upsert({ room_code: ROOM_CODE, role, guess },
+      .upsert({ room_code: ROOM_CODE, role, answers, guess },
               { onConflict: 'room_code,role' })
       .select();
     if (error) { console.error('[uploadGuess] supabase error:', error); return { ok: false, error: error.message }; }
-    console.log('[uploadGuess] ok role=' + role, data);
+    console.log('[uploadGuess] ok role=' + role + ' answers=' + Object.keys(answers || {}).length + ' guess=' + Object.keys(guess || {}).length, data);
     return { ok: true };
   } catch (e) {
     console.error('[uploadGuess] throw:', e);
@@ -181,15 +204,37 @@ async function clearCloudRow(role, fields) {
   if (!supabaseReady || !supabase || typeof supabase.from !== 'function') return { ok: false, error: 'no supabase' };
   try {
     const row = { room_code: ROOM_CODE, role };
-    if (fields === 'answers' || fields === 'all') row.answers = {};
-    if (fields === 'guess'   || fields === 'all') row.guess = {};
     // 探测 guess 列是否真实存在；若不存在（用户未跑迁移），则去掉 guess 字段重写
-    if (row.guess) {
+    let hasGuessColumn = false;
+    try {
       const probe = await supabase.from('tacit_answers').select('guess').eq('room_code', ROOM_CODE).limit(1);
-      if (probe.error && /guess.*does not exist/i.test(probe.error.message || '')) {
-        console.warn('[clearCloud] guess 列不存在，退到只清 answers');
-        delete row.guess;
+      hasGuessColumn = !(probe.error && /guess.*does not exist/i.test(probe.error.message || ''));
+      if (!hasGuessColumn) console.warn('[clearCloud] guess 列不存在，退到只清 answers');
+    } catch (_) { /* 探测失败时保守按无 guess 处理 */ }
+    if (fields === 'answers' || fields === 'all') row.answers = {};
+    if ((fields === 'guess' || fields === 'all') && hasGuessColumn) row.guess = {};
+    // 关键修复：仅清 guess 时必须带上 answers（合并后的），否则 answers NOT NULL 会让 upsert 失败。
+    // 仅清 answers 时 guess 是 NULL-able，缺失字段会被填 NULL 没问题；为对称起见也带上合入后的 guess。
+    if (!row.answers || !row.guess) {
+      let cloudAnswers = {}, cloudGuess = {};
+      try {
+        const rows = await fetchPairAnswers();
+        const myRow = rows.find(r => r.role === role);
+        if (myRow) {
+          if (myRow.answers) {
+            cloudAnswers = typeof myRow.answers === 'string' ? safeParse(myRow.answers) || {} : myRow.answers;
+          }
+          if (myRow.guess) {
+            cloudGuess = typeof myRow.guess === 'string' ? safeParse(myRow.guess) || {} : myRow.guess;
+          }
+        }
+      } catch (e) {
+        console.warn('[clearCloud] fallback fetchPairAnswers failed:', e && e.message);
       }
+      const localAnswers = storage.get(myAnswersKey(role), {});
+      const localGuess = storage.get(myGuessKey(role), {});
+      if (!row.answers) row.answers = { ...(cloudAnswers && typeof cloudAnswers === 'object' ? cloudAnswers : {}), ...localAnswers };
+      if (!row.guess)   row.guess   = { ...(cloudGuess   && typeof cloudGuess   === 'object' ? cloudGuess   : {}), ...localGuess };
     }
     const { data, error } = await supabase
       .from('tacit_answers')
@@ -353,7 +398,8 @@ async function syncNow() {
     activeQid = 0;
   }
   if (guessMergedCount > 0) {
-    const r2 = await uploadGuess(role, guessMerged);
+    // 显式传入 myMerged，避免 uploadGuess 内部再 fetch 一次；同时保证 cloud 不被本地空 answers 误删
+    const r2 = await uploadGuess(role, guessMerged, myMerged);
     if (!r2.ok) {
       // 失败时不打 err 灯，避免覆盖上面的状态；但记到 console
       console.warn('[syncNow] uploadGuess failed:', r2.error);
@@ -1499,7 +1545,10 @@ function bindQCardEvents(panel, q, storeKey, stored, isChallenge, role) {
       syncNow().catch(() => {});
     } else {
       // 仅上传 guess（不重渲染当前题卡）
-      uploadGuess(role, storage.get(myGuessKey(role), {})).catch(() => {});
+      // uploadGuess 内部会自动 fetch + 合入本地/云端 answers，避免 PostgREST upsert 触发 NOT NULL violation
+      uploadGuess(role, storage.get(myGuessKey(role), {})).then(r => {
+        if (!r.ok) console.warn('[challenge] uploadGuess failed:', r.error);
+      }).catch(e => console.warn('[challenge] uploadGuess threw:', e));
       // 再悄悄拉一次对方最新答案（沿用原行为，但不重渲染挑战面板）
       fetchPairAnswers().then(rows => {
         const partnerKey = partnerRole(role);
