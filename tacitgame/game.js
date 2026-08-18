@@ -48,6 +48,8 @@ function tryInitSupabase() {
       supabaseReady = true;
       supabaseInitialized = true;
       console.log('[supabase] initialized, URL = ' + SUPABASE_URL);
+      // 通知所有依赖 SDK 就绪的占位（例如 initMain 在 role 后才安排到的延后同步）
+      try { document.dispatchEvent(new CustomEvent('supabase:ready')); } catch (_) {}
       if (storage.get('tacit_role')) {
         syncNow();
         subscribePartner();
@@ -222,7 +224,11 @@ function bindSyncIndicator() {
   }
 }
 
-/* 同步：把本地答案推到云端，并拉取对方答案 */
+/* 同步：双向下行。
+   - 把本地答案合入云端（云端缺什么补什么）；同时把云端已有的我方答案拉回本地。
+     这样手机/电脑切换时，新一端会自动看到自己之前在另一端设置的全部答案。
+   - 对方答案照旧单独拉到 tacit_partner。
+   - 关键顺序：必须先 fetch 再 upload，否则本地为空的设备会把云端自己那一行的旧答案整段覆盖掉。 */
 async function syncNow() {
   const role = storage.get('tacit_role');
   if (!role) return;
@@ -235,30 +241,46 @@ async function syncNow() {
     return;
   }
 
-  const myAns = storage.get(myAnswersKey(role), {});
-  if (Object.keys(myAns).length > 0) {
-    setSyncStatus('idle', '上传中…');
-    const r = await uploadAnswers(role, myAns);
+  setSyncStatus('idle', '同步中…');
+
+  // 1) 先拉取云端全部答案（不要在此之前 upload，否则会覆盖云端）
+  const rows = await fetchPairAnswers();
+
+  // 2) 处理「自己这一方」：合入本地（手机/电脑切换时同步关键步骤）
+  const myCloud = ((r) => r && r.answers
+    ? (typeof r.answers === 'string' ? safeParse(r.answers) : r.answers)
+    : null)(rows.find(r => r.role === role));
+  const myLocal = storage.get(myAnswersKey(role), {});
+  // 合并策略：local 已有 key 优先（保留本机尚未上云的最近编辑）；local 缺失的 key 从 cloud 取回
+  const myMerged = { ...(myCloud && typeof myCloud === 'object' ? myCloud : {}), ...myLocal };
+  const myMergedCount = Object.keys(myMerged).length;
+  const myLocalCount = Object.keys(myLocal).length;
+  if (myMergedCount !== myLocalCount) {
+    // cloud 补了一些本机原本没有的题目 → 写回 localStorage
+    storage.set(myAnswersKey(role), myMerged);
+    storage.remove(SETUP_SESSION_KEY); // 题池变化，让下一轮重新抽题
+    activeQid = 0;
+  }
+
+  // 3) 上传合并后的我方答案（若本机本来就空、且云端也没有，则是 no-op）
+  if (myMergedCount > 0) {
+    const r = await uploadAnswers(role, myMerged);
     if (!r.ok) {
-      // 上传失败时保留旧 partner，不要清空（避免网络抖动把 UI 退回等待）
+      // 即便上传失败，也保留已经写回本地的云端合入项；下次再试
       setSyncStatus('err', '上传失败: ' + r.error);
-      return;
     }
   }
 
-  const rows = await fetchPairAnswers();
+  // 4) 处理「对方」：写入 tacit_partner 缓存（保持原行为）
   const partnerKey = partnerRole(role);
   const partnerRow = rows.find(r => r.role === partnerKey);
-
-  // 解析 answers：PostgREST 返回的 jsonb 字段已经是对象；但容错一下字符串
   const partnerAnswers = partnerRow && partnerRow.answers
     ? (typeof partnerRow.answers === 'string' ? safeParse(partnerRow.answers) : partnerRow.answers)
     : null;
 
   if (partnerAnswers && Object.keys(partnerAnswers).length > 0) {
     storage.set('tacit_partner', partnerAnswers);
-    const partnerName = partnerNameOf(role);
-    setSyncStatus('online', `${partnerName} 已就绪 ✓`);
+    setSyncStatus('online', `${partnerNameOf(role)} 已就绪 ✓`);
   } else {
     // 拉取不到时**不**清空旧 partner（避免 UI 来回跳）
     const old = storage.get('tacit_partner', null);
@@ -270,6 +292,7 @@ async function syncNow() {
     }
   }
 
+  // 5) 刷新 UI（不论上传成功与否，本地缓存的更新都要体现在界面上）
   if (typeof currentTab !== 'undefined') {
     if (currentTab === 'setup')     renderSetupPanel(role);
     if (currentTab === 'challenge') renderChallengePanel(role);
@@ -877,7 +900,14 @@ function initMain() {
   renderPanel('result');
   updateTabProgress();
   startPolling();
-  // 同步由 tryInitSupabase / switchTab / 答题回调触发；此处不重复触发
+  // 主动拉一次云端，避免 tryInitSupabase 阶段 role 还没写、导致本机空 localStorage
+  // 时错过了把我方已设答案从云端拉回本地这一步（手机/电脑切换时关键）
+  if (supabaseReady) {
+    syncNow();
+  } else if (storage.get('tacit_role')) {
+    // SDK 还没就绪时安排一次延后同步（tryInitSupabase 在 SDK 就绪后也会再调一次，作为兜底）
+    document.addEventListener('supabase:ready', () => syncNow(), { once: true });
+  }
 }
 
 
@@ -958,6 +988,8 @@ function pickFreshSetupBatch(role, n) {
 function startNewSetupSession(role) {
   const picked = pickFreshSetupBatch(role, QUESTIONS_PER_SETUP);
   saveSetupSession({ pickedIds: picked, activeIndex: 0 });
+  // 新一轮从头开始；同时把 module 级游标归零，避免渲染时仍停留在上一轮的最后题
+  activeQid = 0;
   return loadSetupSession();
 }
 
@@ -1051,12 +1083,12 @@ function renderSetupPanel(role) {
 
   panel.innerHTML = buildSetupTopBar(doneInBatch, batchTotal, totalDone, totalAll);
 
-  // 本轮全部答完 → 显示提交按钮
+  // 本轮全部答完 → 提示用户点「完成」即可上传
   if (allDoneInBatch) {
     panel.innerHTML += `
       <div class="empty-tip" style="background:linear-gradient(135deg,#e6f7ee,#d8f0e3);color:#2c5d44;margin-bottom:14px;">
         🎉 本轮 <b>${batchTotal}</b> 道题已全部设置答案！<br>
-        点击下方「提交全部答案」按钮上传到服务器。
+        点击下方「完成」按钮上传到服务器。
       </div>
     `;
   }
@@ -1066,37 +1098,17 @@ function renderSetupPanel(role) {
   // 绑定答题选项事件
   bindSetupCardEvents(panel, q, role, stored);
 
-  // 底部：提交按钮 + 清空入口
+  // 底部：只保留清空入口（提交由「完成」按钮承担）
   const bottomBar = document.createElement('div');
   bottomBar.className = 'nav-row';
   bottomBar.style.marginTop = '4px';
   bottomBar.innerHTML = `
     <button class="nav-btn ghost" id="resetSetupBtn" style="font-size:13px;color:#8a6a72;border-color:#eee;">清空并重新设置</button>
-    ${allDoneInBatch ? '<button class="nav-btn primary" id="submitSetupBtn" style="flex:1;">提交全部答案</button>' : ''}
   `;
   panel.appendChild(bottomBar);
 
   const resetBtn = panel.querySelector('#resetSetupBtn');
   if (resetBtn) resetBtn.addEventListener('click', () => resetSetupAnswers(role));
-
-  const submitBtn = panel.querySelector('#submitSetupBtn');
-  if (submitBtn) {
-    submitBtn.addEventListener('click', async () => {
-      submitBtn.disabled = true;
-      submitBtn.textContent = '提交中…';
-      await syncNow();
-      submitBtn.textContent = '已提交 ✓';
-      submitBtn.style.background = '#4caf80';
-      setTimeout(() => {
-        submitBtn.disabled = false;
-        submitBtn.textContent = '提交全部答案';
-        submitBtn.style.background = '';
-        storage.remove(SETUP_SESSION_KEY);
-        renderSetupPanel(role);
-        updateTabProgress();
-      }, 1500);
-    });
-  }
 }
 
 function buildSetupQCard(q, position, selectedLetter, total) {
@@ -1158,44 +1170,6 @@ function bindSetupCardEvents(panel, q, role, stored) {
       if (bar) {
         bar.querySelector('.big').innerHTML = `${doneInBatch}<small>/${session.pickedIds.length}</small>`;
       }
-
-      // 检查是否全部答完
-      const allDone = session.pickedIds.every(id => !!stored2[id]);
-      if (allDone) {
-        // 重新渲染底部按钮区域（直接子元素 nav-row，避免误选 qcard 内的导航按钮）
-        const bottomBar = panel.querySelector(':scope > .nav-row:last-child');
-        if (bottomBar && !bottomBar.querySelector('#submitSetupBtn')) {
-          const submitBtn = document.createElement('button');
-          submitBtn.className = 'nav-btn primary';
-          submitBtn.id = 'submitSetupBtn';
-          submitBtn.textContent = '提交全部答案';
-          submitBtn.style.flex = '1';
-          bottomBar.innerHTML = '';
-          const resetBtn2 = document.createElement('button');
-          resetBtn2.className = 'nav-btn ghost';
-          resetBtn2.id = 'resetSetupBtn';
-          resetBtn2.style = 'font-size:13px;color:#8a6a72;border-color:#eee;';
-          resetBtn2.textContent = '清空并重新设置';
-          resetBtn2.addEventListener('click', () => resetSetupAnswers(role));
-          bottomBar.appendChild(resetBtn2);
-          bottomBar.appendChild(submitBtn);
-          submitBtn.addEventListener('click', async () => {
-            submitBtn.disabled = true;
-            submitBtn.textContent = '提交中…';
-            await syncNow();
-            submitBtn.textContent = '已提交 ✓';
-            submitBtn.style.background = '#4caf80';
-            setTimeout(() => {
-              submitBtn.disabled = false;
-              submitBtn.textContent = '提交全部答案';
-              submitBtn.style.background = '';
-              storage.remove(SETUP_SESSION_KEY);
-              renderSetupPanel(role);
-              updateTabProgress();
-            }, 1500);
-          });
-        }
-      }
     });
   });
 
@@ -1209,13 +1183,50 @@ function bindSetupCardEvents(panel, q, role, stored) {
     }
   });
 
-  // 下一题
-  panel.querySelector('#nextBtn').addEventListener('click', () => {
+  // 下一题 / 完成
+  panel.querySelector('#nextBtn').addEventListener('click', async () => {
     const session = loadSetupSession();
-    if (activeQid < session.pickedIds.length - 1) {
+    const isLast = activeQid >= session.pickedIds.length - 1;
+    if (!isLast) {
       activeQid++;
       saveSetupSession(session);
       renderSetupPanel(role);
+      return;
+    }
+    // 最后一题：若本轮已全部答完 → 触发「完成」= 上传并开下一轮；否则跳到首个未答题
+    const stored2 = storage.get(myAnswersKey(role), {});
+    const allDone = session.pickedIds.every(id => !!stored2[id]);
+    if (!allDone) {
+      const firstUn = session.pickedIds.findIndex(id => !stored2[id]);
+      if (firstUn >= 0 && firstUn !== activeQid) {
+        activeQid = firstUn;
+        saveSetupSession(session);
+        renderSetupPanel(role);
+      }
+      return;
+    }
+    const nextBtn = panel.querySelector('#nextBtn');
+    if (nextBtn) {
+      nextBtn.disabled = true;
+      nextBtn.textContent = '上传中…';
+    }
+    try {
+      await syncNow();
+      if (nextBtn) {
+        nextBtn.textContent = '已提交 ✓';
+        nextBtn.style.background = '#4caf80';
+      }
+      storage.remove(SETUP_SESSION_KEY);
+      setTimeout(() => {
+        renderSetupPanel(role);
+        updateTabProgress();
+      }, 800);
+    } catch (e) {
+      if (nextBtn) {
+        nextBtn.disabled = false;
+        nextBtn.textContent = '完成';
+        nextBtn.style.background = '';
+      }
     }
   });
 }
